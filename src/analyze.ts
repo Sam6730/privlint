@@ -1,19 +1,16 @@
-import { assertDirectory } from "./paths.js";
+import { runChecks } from "./checks/index.js";
+import { parseRepo } from "./parse.js";
 import { rankFindings } from "./rank.js";
-import type {
-  Finding,
-  InterviewAnswers,
-  LlmClient,
-  Report,
-} from "./types.js";
+import type { InterviewAnswers, LlmClient, Report } from "./types.js";
 
 /**
  * Analyse a repository for data-privacy blind spots.
  *
- * This is the central testable seam. Later tickets parse the repo into a
- * `summary.json`, run deterministic checks, and send the summary (never source
- * code) to `llmClient` for judgment checks. Today no checks are wired, so a run
- * against any repo reports no findings.
+ * This is the central testable seam. It parses the repo into an inspectable
+ * `summary.json` (source code never leaves the machine), runs the deterministic
+ * checks over that summary, and returns their findings ranked most-severe-first.
+ * Later tickets add the judgment checks that send the summary (never source
+ * code) to `llmClient`, conditioned by `interviewAnswers`.
  *
  * @param repoPath          Path to the repository to analyse.
  * @param interviewAnswers  Business facts the code can't reveal (unused until
@@ -26,12 +23,12 @@ export async function analyze(
   interviewAnswers: InterviewAnswers,
   llmClient: LlmClient,
 ): Promise<Report> {
-  await assertDirectory(repoPath, "analyse");
+  const summary = await parseRepo(repoPath);
 
-  // No checks are wired yet. Future tickets populate this from a parsed summary
-  // (deterministic checks) and from `llmClient` over that summary (judgment
-  // checks), conditioned by `interviewAnswers`.
-  const findings: Finding[] = [];
+  // Deterministic checks run over the summary. Future tickets add judgment
+  // checks that reason over the same summary via `llmClient`, conditioned by
+  // `interviewAnswers`.
+  const findings = runChecks(summary);
 
   return {
     repoPath,
