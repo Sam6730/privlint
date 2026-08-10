@@ -231,6 +231,105 @@ describe("summarizeFiles — PII signals", () => {
   });
 });
 
+describe("summarizeFiles — committed secrets", () => {
+  // Provider-shaped tokens are assembled at runtime so this committed test file
+  // never contains a contiguous real-format secret (which push-protection would
+  // flag). The detector still sees the whole value inside the parsed literal.
+  const awsKey = `AKIA${"IOSFODNN7EXAMPLE"}`;
+  const stripeKey = `sk_live_${"0123456789abcdefABCDEF"}`;
+  const googleKey = `AIza${"a".repeat(35)}`;
+  const githubToken = `ghp_${"b".repeat(36)}`;
+
+  it("flags a committed AWS access key ID", () => {
+    const summary = summarizeFiles({
+      "src/config.ts": `export const KEY = "${awsKey}";`,
+    });
+
+    expect(summary.secrets).toHaveLength(1);
+    expect(summary.secrets[0]).toMatchObject({
+      kind: "aws-access-key-id",
+      file: "src/config.ts",
+      line: 1,
+    });
+    // The full value is never stored — only a redacted preview.
+    expect(summary.secrets[0]?.preview).toBe("AKIA…");
+    expect(JSON.stringify(summary.secrets)).not.toContain(awsKey);
+  });
+
+  it("flags committed Stripe, Google, and GitHub credentials", () => {
+    const summary = summarizeFiles({
+      "src/stripe.ts": `const k = "${stripeKey}";`,
+      "src/maps.ts": `const k = "${googleKey}";`,
+      "src/gh.ts": `const k = "${githubToken}";`,
+    });
+
+    expect(summary.secrets.map((s) => s.kind).sort()).toEqual([
+      "github-token",
+      "google-api-key",
+      "stripe-secret-key",
+    ]);
+  });
+
+  it("flags a committed private key block", () => {
+    const summary = summarizeFiles({
+      "src/key.ts": [
+        "const pem = `-----BEGIN PRIVATE KEY-----",
+        "MIIBVAIBADANBgkqhkiG9w0BAQ",
+        "-----END PRIVATE KEY-----`;",
+      ].join("\n"),
+    });
+
+    expect(summary.secrets).toHaveLength(1);
+    expect(summary.secrets[0]?.kind).toBe("private-key");
+  });
+
+  it("flags a secret-named assignment holding a credential-shaped literal", () => {
+    const summary = summarizeFiles({
+      "src/env.ts": `const INTERNAL_SIGNING_SECRET = "d8f3a1c07b29e64f5a2b1908c7e3d4f60a9b8c7d";`,
+    });
+
+    expect(summary.secrets).toHaveLength(1);
+    expect(summary.secrets[0]).toMatchObject({
+      kind: "generic-api-key",
+      file: "src/env.ts",
+    });
+  });
+
+  it("does not double-count a provider secret via the generic rule", () => {
+    const summary = summarizeFiles({
+      "src/config.ts": `const awsAccessKeyId = "${awsKey}";`,
+    });
+
+    expect(summary.secrets).toHaveLength(1);
+    expect(summary.secrets[0]?.kind).toBe("aws-access-key-id");
+  });
+
+  it("stays silent on env-var reads and placeholder values", () => {
+    const summary = summarizeFiles({
+      "src/env.ts": [
+        `const apiKey = process.env.API_KEY;`,
+        `const stripeSecret = "sk_live_your-key-here";`,
+        `const token = "changeme";`,
+        `const placeholderKey = "example-api-key-0123456789-abcdef";`,
+      ].join("\n"),
+    });
+
+    expect(summary.secrets).toEqual([]);
+  });
+
+  it("does not flag ordinary non-credential strings", () => {
+    const summary = summarizeFiles({
+      "src/app.ts": [
+        `const commitHash = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0";`,
+        `const greeting = "welcome to the dashboard, please sign in";`,
+        `const url = "https://example.com/api/v1/users?page=2";`,
+      ].join("\n"),
+    });
+
+    expect(summary.secrets).toEqual([]);
+  });
+});
+
 describe("parseRepo — reads from disk", () => {
   const minimalRepo = fileURLToPath(
     new URL("../test/fixtures/minimal", import.meta.url),
