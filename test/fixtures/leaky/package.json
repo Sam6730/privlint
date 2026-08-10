@@ -1,0 +1,10 @@
+{
+  "name": "leaky-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@segment/analytics-node": "^2.0.0",
+    "next": "^14.0.0",
+    "stripe": "^14.0.0"
+  }
+}
