@@ -26,34 +26,42 @@ interface SecretMeta {
 const PURGE =
   "Then purge it from your git history so it can't be recovered from old commits.";
 
+/**
+ * The standard remediation for a provider credential: pull it out of the code,
+ * read it from the environment, and rotate it at the provider. `rotation` is the
+ * provider-specific clause (which console, what verb).
+ */
+const rotateFix = (rotation: string) =>
+  `Remove it from the code and read it from an environment variable instead, then ${rotation} (treat the committed one as already compromised). ${PURGE}`;
+
 const SECRET_META: Record<SecretKind, SecretMeta> = {
   "aws-access-key-id": {
     label: "AWS access key ID",
     severity: "critical",
     consequence:
       "Anyone who can read this repo can use this AWS key to spin up resources on your account and run up the bill, or reach whatever data that account can touch.",
-    fix: `Remove it from the code and read it from an environment variable instead, then rotate the key in the AWS IAM console (treat the committed one as already compromised). ${PURGE}`,
+    fix: rotateFix("rotate the key in the AWS IAM console"),
   },
   "stripe-secret-key": {
     label: "Stripe secret key",
     severity: "critical",
     consequence:
       "Anyone who can read this repo can use this live Stripe key to charge cards, issue refunds, and pull your customer list — and Stripe may freeze your account once it detects the exposure.",
-    fix: `Remove it from the code and read it from an environment variable instead, then roll the key in the Stripe dashboard (treat the committed one as already compromised). ${PURGE}`,
+    fix: rotateFix("roll the key in the Stripe dashboard"),
   },
   "google-api-key": {
     label: "Google API key",
     severity: "critical",
     consequence:
       "Anyone who can read this repo can use this Google API key to call services billed to your account and burn through your quota.",
-    fix: `Remove it from the code and read it from an environment variable instead, then regenerate the key in the Google Cloud console (treat the committed one as already compromised). ${PURGE}`,
+    fix: rotateFix("regenerate the key in the Google Cloud console"),
   },
   "github-token": {
     label: "GitHub token",
     severity: "critical",
     consequence:
       "Anyone who can read this repo can use this GitHub token to act as you — reading private repos and pushing code — with your access.",
-    fix: `Remove it from the code and read it from an environment variable instead, then revoke the token in your GitHub settings and issue a new one (treat the committed one as already compromised). ${PURGE}`,
+    fix: rotateFix("revoke the token in your GitHub settings and issue a new one"),
   },
   "private-key": {
     label: "private key",
