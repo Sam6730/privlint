@@ -1,19 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { PiiSignal, Summary } from "../summary.js";
+import type { PiiSignal } from "../summary.js";
 import { checkPiiInLogs } from "./pii-logs.js";
+import { emptySummary } from "./summary-fixture.js";
 
 /** An empty summary with only the PII signals populated, for check tests. */
-function summaryWith(piiSignals: PiiSignal[]): Summary {
-  return {
-    repoPath: ".",
-    routes: [],
-    schema: [],
-    sdks: [],
-    policyPages: { privacy: { present: false }, terms: { present: false } },
-    piiSignals,
-    secrets: [],
-  };
-}
+const summaryWith = (piiSignals: PiiSignal[]) => emptySummary({ piiSignals });
 
 const logSignal = (field: string, over: Partial<PiiSignal> = {}): PiiSignal => ({
   kind: "log",

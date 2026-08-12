@@ -1,19 +1,10 @@
 import { describe, expect, it } from "vitest";
-import type { DetectedSecret, Summary } from "../summary.js";
+import type { DetectedSecret } from "../summary.js";
 import { checkCommittedSecrets } from "./secrets.js";
+import { emptySummary } from "./summary-fixture.js";
 
 /** An empty summary with only the secrets field populated, for check tests. */
-function summaryWith(secrets: DetectedSecret[]): Summary {
-  return {
-    repoPath: ".",
-    routes: [],
-    schema: [],
-    sdks: [],
-    policyPages: { privacy: { present: false }, terms: { present: false } },
-    piiSignals: [],
-    secrets,
-  };
-}
+const summaryWith = (secrets: DetectedSecret[]) => emptySummary({ secrets });
 
 describe("checkCommittedSecrets", () => {
   it("returns no findings when nothing was committed", () => {
