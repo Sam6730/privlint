@@ -1,7 +1,7 @@
 // Leaky fixture: the mistakes a rushed founder makes all at once —
-// hard-coded credentials, PII in logs, third-party SDKs wired, and (repo-wide)
-// no /privacy page. Only the committed-secrets check flags anything today; the
-// rest seeds the checks landing in later tickets.
+// hard-coded credentials, PII (incl. card data) in logs, personal data pushed
+// into a tracking URL and an analytics event, third-party SDKs wired, and
+// (repo-wide) no /privacy page. The secrets and both leak checks all fire here.
 import { Analytics } from "@segment/analytics-node";
 import Stripe from "stripe";
 
@@ -19,6 +19,10 @@ export async function POST(req: Request): Promise<Response> {
   console.log("charging customer", email, cardNumber, AWS_ACCESS_KEY_ID);
 
   analytics.track({ userId: email, event: "charge", properties: { email } });
+
+  // Personal data baked into a third-party tracking URL (leaks via referrer/logs).
+  await fetch(`https://track.example.com/hit?email=${email}`);
+
   await stripe.charges.create({ amount: 1000, currency: "usd" });
 
   return new Response("ok");

@@ -25,17 +25,28 @@ const run = (name: string): Promise<Report> =>
   analyze(fixture(name), UNANSWERED_INTERVIEW, failingLlmClient);
 
 describe("analyze — fixture repos", () => {
-  it("flags the leaky repo's committed secrets, most severe first", async () => {
+  it("flags the leaky repo's secret and both leaks, most severe first", async () => {
     const report = await run("leaky");
 
-    expect(report.findings.length).toBeGreaterThanOrEqual(2);
     // Ranked by severity: the critical provider key leads.
     expect(report.findings[0]?.severity).toBe("critical");
     expect(report.findings.some((f) => f.title.includes("AWS access key ID"))).toBe(true);
-    // Every finding is a committed-secret fact.
+
+    const ids = report.findings.map((f) => f.id);
+    // The committed-secrets check and both leak checks all fire on this repo.
+    expect(ids).toContain("committed-secrets");
+    expect(ids).toContain("pii-in-logs");
+    expect(ids).toContain("pii-in-urls-analytics");
+    // Card data in the logs outranks the ordinary personal-data leaks.
+    expect(
+      report.findings.some(
+        (f) => f.id === "pii-in-logs" && f.severity === "high" && /card/i.test(f.title),
+      ),
+    ).toBe(true);
+    // Every finding here is a code-level fact carrying a consequence and a fix.
     expect(
       report.findings.every(
-        (f) => f.category === "secrets" && f.determination === "checked-in-code",
+        (f) => f.determination === "checked-in-code" && f.consequence !== "" && f.fix !== "",
       ),
     ).toBe(true);
   });
@@ -45,14 +56,22 @@ describe("analyze — fixture repos", () => {
     expect(report.findings).toEqual([]);
   });
 
-  it("flags the middling repo's single hard-coded secret", async () => {
+  it("flags the middling repo's expected subset — secret + analytics leak, no log leak", async () => {
     const report = await run("middling");
 
-    expect(report.findings).toHaveLength(1);
+    expect(report.findings).toHaveLength(2);
+    // Ranked: the high-severity committed secret leads the medium analytics leak.
     expect(report.findings[0]).toMatchObject({
-      category: "secrets",
+      id: "committed-secrets",
       determination: "checked-in-code",
       severity: "high",
     });
+    expect(report.findings[1]).toMatchObject({
+      id: "pii-in-urls-analytics",
+      category: "analytics",
+      severity: "medium",
+    });
+    // The subset is genuine: the logs check stays silent on this repo.
+    expect(report.findings.some((f) => f.id === "pii-in-logs")).toBe(false);
   });
 });

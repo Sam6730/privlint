@@ -10,12 +10,18 @@
 import type { Finding } from "../types.js";
 import type { Summary } from "../summary.js";
 import { checkCommittedSecrets } from "./secrets.js";
+import { checkPiiInLogs } from "./pii-logs.js";
+import { checkPiiInUrlsOrAnalytics } from "./pii-sinks.js";
 
 /** A deterministic check: a pure mapping from the parsed summary to findings. */
 export type Check = (summary: Summary) => Finding[];
 
 /** Every deterministic check, run in order (results are ranked by `analyze`). */
-export const DETERMINISTIC_CHECKS: readonly Check[] = [checkCommittedSecrets];
+export const DETERMINISTIC_CHECKS: readonly Check[] = [
+  checkCommittedSecrets,
+  checkPiiInLogs,
+  checkPiiInUrlsOrAnalytics,
+];
 
 /** Run all deterministic checks over a summary and collect their findings. */
 export function runChecks(summary: Summary): Finding[] {
