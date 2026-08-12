@@ -580,7 +580,14 @@ function piiFieldsIn(node: Node): string[] {
   return [...fields];
 }
 
-function isPiiName(name: string): boolean {
+/**
+ * Whether an identifier names personal data, by the same substring rule the PII
+ * signal detectors use. Exported as the single source of truth so downstream
+ * checks (e.g. the missing-path checks' "does this repo hold personal data?"
+ * gate) grade against the exact set the parser recognises, without duplicating
+ * the list.
+ */
+export function isPiiName(name: string): boolean {
   const normalized = name.toLowerCase().replace(/[^a-z0-9]/g, "");
   return PII_SUBSTRINGS.some((hint) => normalized.includes(hint));
 }

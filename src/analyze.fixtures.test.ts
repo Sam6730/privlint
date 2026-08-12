@@ -37,6 +37,15 @@ describe("analyze — fixture repos", () => {
     expect(ids).toContain("committed-secrets");
     expect(ids).toContain("pii-in-logs");
     expect(ids).toContain("pii-in-urls-analytics");
+    // The repo collects personal data but ships no /privacy, deletion, or export
+    // path, so all three missing-path checks fire too.
+    expect(ids).toContain("missing-privacy-page");
+    expect(ids).toContain("missing-deletion-path");
+    expect(ids).toContain("missing-export-path");
+    // The presence-only checks say so, rather than implying a stub route suffices.
+    expect(
+      report.findings.find((f) => f.id === "missing-deletion-path")?.fix.toLowerCase(),
+    ).toContain("presence");
     // Card data in the logs outranks the ordinary personal-data leaks.
     expect(
       report.findings.some(
@@ -73,5 +82,11 @@ describe("analyze — fixture repos", () => {
     });
     // The subset is genuine: the logs check stays silent on this repo.
     expect(report.findings.some((f) => f.id === "pii-in-logs")).toBe(false);
+    // This repo collects personal data but is careful: it ships a /privacy page
+    // plus reachable deletion and export paths, so no missing-path check fires.
+    const ids = report.findings.map((f) => f.id);
+    expect(ids).not.toContain("missing-privacy-page");
+    expect(ids).not.toContain("missing-deletion-path");
+    expect(ids).not.toContain("missing-export-path");
   });
 });
