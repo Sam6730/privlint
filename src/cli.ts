@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 import { resolve } from "node:path";
 import { analyze } from "./analyze.js";
-import { notConfiguredLlmClient } from "./llm.js";
+import { resolveLlmClient } from "./llm.js";
 import { parseRepo } from "./parse.js";
 import { renderReport } from "./render.js";
 import { UNANSWERED_INTERVIEW } from "./types.js";
+import type { LlmEnv } from "./llm.js";
 
 const USAGE = `datashadow — a privacy-hygiene check for your JS/TS codebase.
 
@@ -13,7 +14,36 @@ Usage:
   datashadow --print-summary   Print the inspectable summary.json the tool built
                                from your code, instead of the report
   datashadow --help            Show this help
+
+Model provider (optional — the judgment checks reason over the summary.json,
+never your source; skipped entirely when unset). Bring your own key against any
+OpenAI-compatible endpoint, including a local model (Ollama/LM Studio):
+  --llm-base-url <url>   or  DATASHADOW_LLM_BASE_URL
+  --llm-model <name>     or  DATASHADOW_LLM_MODEL
+  --llm-api-key <key>    or  DATASHADOW_LLM_API_KEY   (omit for a local model)
 `;
+
+/** Read `--flag value` from argv, returning undefined when the flag is absent. */
+function flagValue(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  if (index === -1) return undefined;
+  return args[index + 1];
+}
+
+/**
+ * Merge CLI flags over environment variables into the model-provider config.
+ * Flags win so a one-off run can override an ambient environment.
+ */
+function llmEnvFrom(args: string[], env: NodeJS.ProcessEnv): LlmEnv {
+  return {
+    DATASHADOW_LLM_BASE_URL:
+      flagValue(args, "--llm-base-url") ?? env.DATASHADOW_LLM_BASE_URL,
+    DATASHADOW_LLM_MODEL:
+      flagValue(args, "--llm-model") ?? env.DATASHADOW_LLM_MODEL,
+    DATASHADOW_LLM_API_KEY:
+      flagValue(args, "--llm-api-key") ?? env.DATASHADOW_LLM_API_KEY,
+  };
+}
 
 async function main(argv: string[]): Promise<number> {
   const args = argv.slice(2);
@@ -23,7 +53,18 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  const positional = args.filter((arg) => !arg.startsWith("-"));
+  // Flags that consume the following token as their value; that value must not
+  // be mistaken for the positional repo path.
+  const valueFlags = ["--llm-base-url", "--llm-model", "--llm-api-key"];
+  const consumed = new Set<number>();
+  for (const flag of valueFlags) {
+    const index = args.indexOf(flag);
+    if (index !== -1) consumed.add(index).add(index + 1);
+  }
+
+  const positional = args.filter(
+    (arg, index) => !arg.startsWith("-") && !consumed.has(index),
+  );
   const repoPath = resolve(positional[0] ?? ".");
 
   // --print-summary surfaces the Parse-stage output so a user can verify exactly
@@ -34,13 +75,11 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  // The interview and model provider aren't wired yet; pass stable defaults so
-  // the analyze seam stays fixed as later tickets fill them in.
-  const report = await analyze(
-    repoPath,
-    UNANSWERED_INTERVIEW,
-    notConfiguredLlmClient,
-  );
+  // Resolve the model provider from flags/env; when unconfigured this is the
+  // not-configured client and the judgment stage is skipped. The interview
+  // isn't wired yet, so pass the stable "everything unknown" default.
+  const llmClient = resolveLlmClient(llmEnvFrom(args, process.env));
+  const report = await analyze(repoPath, UNANSWERED_INTERVIEW, llmClient);
 
   process.stdout.write(renderReport(report) + "\n");
   return 0;

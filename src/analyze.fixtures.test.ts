@@ -14,10 +14,14 @@ import type { LlmClient, Report } from "./types.js";
 const fixture = (name: string) =>
   fileURLToPath(new URL(`../test/fixtures/${name}`, import.meta.url));
 
-// No judgment checks are wired yet, so analyze must never touch the LLM client.
+// These fixtures isolate the deterministic checks — the clean-repo silence gate
+// is about false positives in code-level facts, not judgment. Running with an
+// unavailable client skips the Reason stage; the throw guards against analyze
+// ever calling a client it was told is not configured.
 const failingLlmClient: LlmClient = {
+  available: false,
   async complete() {
-    throw new Error("LLM client should not be called yet");
+    throw new Error("unavailable LLM client should not be called");
   },
 };
 

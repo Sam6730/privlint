@@ -97,9 +97,17 @@ export interface LlmCompletionRequest {
 
 /**
  * The LLM client is injected into {@link analyze} as a dependency so judgment
- * checks stay deterministic in tests. Unused until judgment checks are wired.
+ * checks stay deterministic in tests.
  */
 export interface LlmClient {
+  /**
+   * Whether a real model provider is configured. The Reason stage skips
+   * judgment entirely when this is false, so a run with no provider still
+   * produces the deterministic findings. It is a capability flag, not a
+   * guard against misuse: {@link complete} on an unavailable client still
+   * throws, so anything that calls it directly fails loudly.
+   */
+  readonly available: boolean;
   complete(request: LlmCompletionRequest): Promise<string>;
 }
 
