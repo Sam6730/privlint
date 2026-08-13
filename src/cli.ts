@@ -20,7 +20,10 @@ never your source; skipped entirely when unset). Bring your own key against any
 OpenAI-compatible endpoint, including a local model (Ollama/LM Studio):
   --llm-base-url <url>   or  DATASHADOW_LLM_BASE_URL
   --llm-model <name>     or  DATASHADOW_LLM_MODEL
-  --llm-api-key <key>    or  DATASHADOW_LLM_API_KEY   (omit for a local model)
+  DATASHADOW_LLM_API_KEY   the API key (env only; omit for a local model)
+
+The key is env-only by design: a flag would land in your shell history and the
+process table (visible via \`ps\`), so it's never accepted on the command line.
 `;
 
 /** Read `--flag value` from argv, returning undefined when the flag is absent. */
@@ -32,7 +35,9 @@ function flagValue(args: string[], flag: string): string | undefined {
 
 /**
  * Merge CLI flags over environment variables into the model-provider config.
- * Flags win so a one-off run can override an ambient environment.
+ * Flags win so a one-off run can override an ambient environment — but only for
+ * the non-secret settings. The API key is read from the environment only: a
+ * flag would leak it into shell history and the process table (`ps`).
  */
 function llmEnvFrom(args: string[], env: NodeJS.ProcessEnv): LlmEnv {
   return {
@@ -40,8 +45,7 @@ function llmEnvFrom(args: string[], env: NodeJS.ProcessEnv): LlmEnv {
       flagValue(args, "--llm-base-url") ?? env.DATASHADOW_LLM_BASE_URL,
     DATASHADOW_LLM_MODEL:
       flagValue(args, "--llm-model") ?? env.DATASHADOW_LLM_MODEL,
-    DATASHADOW_LLM_API_KEY:
-      flagValue(args, "--llm-api-key") ?? env.DATASHADOW_LLM_API_KEY,
+    DATASHADOW_LLM_API_KEY: env.DATASHADOW_LLM_API_KEY,
   };
 }
 
@@ -54,8 +58,9 @@ async function main(argv: string[]): Promise<number> {
   }
 
   // Flags that consume the following token as their value; that value must not
-  // be mistaken for the positional repo path.
-  const valueFlags = ["--llm-base-url", "--llm-model", "--llm-api-key"];
+  // be mistaken for the positional repo path. (The API key is env-only, so it
+  // never appears here.)
+  const valueFlags = ["--llm-base-url", "--llm-model"];
   const consumed = new Set<number>();
   for (const flag of valueFlags) {
     const index = args.indexOf(flag);
