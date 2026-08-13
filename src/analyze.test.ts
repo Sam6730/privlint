@@ -29,19 +29,6 @@ function fakeLlmClient(response: string): {
   return { client, requests };
 }
 
-const cannedJudgment = JSON.stringify({
-  findings: [
-    {
-      id: "undisclosed-processor",
-      title: "A vendor may be undisclosed",
-      severity: "high",
-      category: "disclosure",
-      consequence: "Data may leave for a processor your policy doesn't name.",
-      fix: "List the processor in your privacy policy and confirm a DPA.",
-    },
-  ],
-});
-
 describe("analyze", () => {
   it("skips the model and reports no findings when no provider is configured", async () => {
     const report = await analyze(
@@ -54,25 +41,16 @@ describe("analyze", () => {
     expect(report.repoPath).toBe(minimalRepo);
   });
 
-  it("maps a canned model reply into the report and sends only the summary", async () => {
-    const { client, requests } = fakeLlmClient(cannedJudgment);
+  it("skips the model when the repo has no vendor drift to reason about", async () => {
+    // The minimal repo wires no third-party SDKs, so the drift diff finds no
+    // undisclosed processor — the judgment stage never consults the model, even
+    // though one is available.
+    const { client, requests } = fakeLlmClient("{ irrelevant }");
 
     const report = await analyze(minimalRepo, UNANSWERED_INTERVIEW, client);
 
-    // The pass-through seam: the model's reply becomes a reasoned-about finding.
-    expect(report.findings).toHaveLength(1);
-    expect(report.findings[0]).toMatchObject({
-      id: "undisclosed-processor",
-      determination: "reasoned-about",
-      severity: "high",
-    });
-
-    // What reached the model is the parsed summary (a JSON object with the
-    // repo's path), not the repo's raw source files.
-    expect(requests).toHaveLength(1);
-    const prompt = requests[0]!.prompt;
-    expect(prompt).toContain('"repoPath"');
-    expect(prompt).toContain("summary.json:");
+    expect(report.findings).toEqual([]);
+    expect(requests).toHaveLength(0);
   });
 
   it("passes the interview answers through to the checks", async () => {

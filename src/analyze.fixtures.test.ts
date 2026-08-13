@@ -2,7 +2,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { analyze } from "./analyze.js";
 import { UNANSWERED_INTERVIEW } from "./types.js";
-import type { LlmClient, Report } from "./types.js";
+import type { LlmClient, LlmCompletionRequest, Report } from "./types.js";
 
 /**
  * Integration coverage: run the real `analyze` seam in-process against the three
@@ -92,5 +92,74 @@ describe("analyze — fixture repos", () => {
     expect(ids).not.toContain("missing-privacy-page");
     expect(ids).not.toContain("missing-deletion-path");
     expect(ids).not.toContain("missing-export-path");
+  });
+});
+
+/**
+ * The code-vs-policy drift check (the LLM judgment differentiator), exercised
+ * end-to-end through `analyze` with a deterministic fake client. The fake always
+ * offers a drift finding; whether it reaches the report is decided by the
+ * deterministic diff, not by the model — so this proves both that the leaky repo
+ * flags its undisclosed vendors and that the clean repo stays silent without the
+ * model ever being consulted.
+ */
+function fakeLlmClient(response: string): {
+  client: LlmClient;
+  requests: LlmCompletionRequest[];
+} {
+  const requests: LlmCompletionRequest[] = [];
+  const client: LlmClient = {
+    available: true,
+    async complete(request) {
+      requests.push(request);
+      return response;
+    },
+  };
+  return { client, requests };
+}
+
+// A canned drift finding, phrased as conditional risk with a counsel nudge — the
+// shape the drift prompt asks the model for.
+const driftReply = JSON.stringify({
+  findings: [
+    {
+      id: "undisclosed-processor",
+      title: "A vendor your code uses may be undisclosed in your privacy policy",
+      severity: "high",
+      category: "disclosure",
+      consequence:
+        "Your code sends personal data to a third party your privacy policy doesn't name, which may be an undisclosed processor.",
+      fix: "List the processor in your privacy policy and confirm a DPA is in place; check with counsel whether disclosure is required.",
+    },
+  ],
+});
+
+describe("analyze — code-vs-policy drift (judgment)", () => {
+  it("flags the leaky repo's undisclosed processors and sends only the summary", async () => {
+    const { client, requests } = fakeLlmClient(driftReply);
+
+    const report = await analyze(fixture("leaky"), UNANSWERED_INTERVIEW, client);
+
+    // The drift finding surfaces, labelled as reasoned-about (not a code fact).
+    const drift = report.findings.find((f) => f.id === "undisclosed-processor");
+    expect(drift?.determination).toBe("reasoned-about");
+
+    // The model was consulted once, with the two wired-but-undisclosed vendors,
+    // over the summary — never the raw source.
+    expect(requests).toHaveLength(1);
+    const prompt = requests[0]!.prompt;
+    expect(prompt).toContain("Stripe");
+    expect(prompt).toContain("Segment");
+    expect(prompt).toContain("summary.json:");
+  });
+
+  it("keeps the clean repo silent — its policy names Stripe, so the model is never consulted", async () => {
+    const { client, requests } = fakeLlmClient(driftReply);
+
+    const report = await analyze(fixture("clean"), UNANSWERED_INTERVIEW, client);
+
+    // The deterministic diff finds no drift, so a chatty model can't add one.
+    expect(report.findings).toEqual([]);
+    expect(requests).toHaveLength(0);
   });
 });
