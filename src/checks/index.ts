@@ -1,13 +1,21 @@
 /**
- * The deterministic check registry.
+ * The check registry.
  *
- * A {@link Check} is a pure `summary → Finding[]` function. {@link analyze} runs
- * every registered check over the parsed summary and ranks the combined result;
- * adding a future deterministic check is a one-line registration here, not a
- * change to `analyze`. Judgment (LLM-over-summary) checks are wired separately
- * once that stage lands.
+ * A {@link Check} maps the parsed summary plus the interview answers to findings.
+ * {@link analyze} runs every registered check and ranks the combined result;
+ * adding a future check is a one-line registration here, not a change to
+ * `analyze`. Judgment (LLM-over-summary) checks are wired separately via the
+ * Reason stage.
+ *
+ * Two families register here, differing only in their trust signal:
+ *
+ * - {@link DETERMINISTIC_CHECKS} — code-level facts (`checked-in-code`). These
+ *   read only the summary and ignore the answers, so the clean-repo silence gate
+ *   holds regardless of what was answered.
+ * - {@link INTERVIEW_CHECKS} — applicability that follows from what the founder
+ *   told us (`you-told-us`), silent unless an answer is a definite yes/no.
  */
-import type { Finding } from "../types.js";
+import type { Finding, InterviewAnswers } from "../types.js";
 import type { Summary } from "../summary.js";
 import { checkCommittedSecrets } from "./secrets.js";
 import { checkPiiInLogs } from "./pii-logs.js";
@@ -17,11 +25,18 @@ import {
   checkMissingExportPath,
   checkMissingPrivacyPage,
 } from "./missing-paths.js";
+import {
+  checkSellShareDisclosure,
+  checkVendorDpas,
+} from "./interview-facts.js";
 
-/** A deterministic check: a pure mapping from the parsed summary to findings. */
-export type Check = (summary: Summary) => Finding[];
+/**
+ * A check: a pure mapping from the parsed summary and interview answers to
+ * findings. Code-fact checks simply ignore the answers argument.
+ */
+export type Check = (summary: Summary, answers: InterviewAnswers) => Finding[];
 
-/** Every deterministic check, run in order (results are ranked by `analyze`). */
+/** Code-fact checks (`checked-in-code`); read only the summary. */
 export const DETERMINISTIC_CHECKS: readonly Check[] = [
   checkCommittedSecrets,
   checkPiiInLogs,
@@ -31,7 +46,18 @@ export const DETERMINISTIC_CHECKS: readonly Check[] = [
   checkMissingExportPath,
 ];
 
-/** Run all deterministic checks over a summary and collect their findings. */
-export function runChecks(summary: Summary): Finding[] {
-  return DETERMINISTIC_CHECKS.flatMap((check) => check(summary));
+/** Interview-conditioned checks (`you-told-us`); silent unless an answer is set. */
+export const INTERVIEW_CHECKS: readonly Check[] = [
+  checkSellShareDisclosure,
+  checkVendorDpas,
+];
+
+/** Run every registered check over the summary and answers, collecting findings. */
+export function runChecks(
+  summary: Summary,
+  answers: InterviewAnswers,
+): Finding[] {
+  return [...DETERMINISTIC_CHECKS, ...INTERVIEW_CHECKS].flatMap((check) =>
+    check(summary, answers),
+  );
 }

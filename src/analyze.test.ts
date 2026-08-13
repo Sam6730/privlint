@@ -75,6 +75,22 @@ describe("analyze", () => {
     expect(prompt).toContain("summary.json:");
   });
 
+  it("passes the interview answers through to the checks", async () => {
+    // The sell/share applicability is a business fact the code can't reveal, so
+    // it fires only because the answer reached the checks via the analyze seam.
+    const report = await analyze(
+      minimalRepo,
+      { ...UNANSWERED_INTERVIEW, sellsOrSharesData: true },
+      notConfiguredLlmClient,
+    );
+
+    expect(
+      report.findings.some(
+        (f) => f.id === "sell-share-ccpa" && f.determination === "you-told-us",
+      ),
+    ).toBe(true);
+  });
+
   it("rejects when the repo path does not exist", async () => {
     await expect(
       analyze(
