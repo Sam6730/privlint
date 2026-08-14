@@ -1,4 +1,4 @@
-import { stat } from "node:fs/promises";
+import { assertDirectory } from "./paths.js";
 import { rankFindings } from "./rank.js";
 import type {
   Finding,
@@ -26,7 +26,7 @@ export async function analyze(
   interviewAnswers: InterviewAnswers,
   llmClient: LlmClient,
 ): Promise<Report> {
-  await assertRepoPath(repoPath);
+  await assertDirectory(repoPath, "analyse");
 
   // No checks are wired yet. Future tickets populate this from a parsed summary
   // (deterministic checks) and from `llmClient` over that summary (judgment
@@ -37,17 +37,4 @@ export async function analyze(
     repoPath,
     findings: rankFindings(findings),
   };
-}
-
-/** Fail fast with a clear message if the path isn't an analysable directory. */
-async function assertRepoPath(repoPath: string): Promise<void> {
-  let stats;
-  try {
-    stats = await stat(repoPath);
-  } catch {
-    throw new Error(`Cannot analyse "${repoPath}": no such file or directory.`);
-  }
-  if (!stats.isDirectory()) {
-    throw new Error(`Cannot analyse "${repoPath}": not a directory.`);
-  }
 }
