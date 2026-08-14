@@ -18,11 +18,13 @@ import type { SourceFile } from "ts-morph";
 import { assertDirectory } from "./paths.js";
 import { lookupSdk } from "./registry.js";
 import type {
+  DetectedSecret,
   PiiSignal,
   PolicyPage,
   PolicyPages,
   Route,
   SchemaModel,
+  SecretKind,
   Summary,
 } from "./summary.js";
 
@@ -97,6 +99,46 @@ const PII_SUBSTRINGS = [
   "ipaddress",
 ];
 
+/**
+ * High-confidence committed-secret token shapes. Each is a well-known credential
+ * format distinctive enough that a match is a real leak, not a guess. `preview`
+ * is how many leading characters of the match to keep in the redacted evidence.
+ * Provider patterns are matched verbatim (no placeholder filtering) — a repo
+ * carrying an `AKIA…`-shaped string is worth flagging regardless of its text.
+ */
+interface SecretPattern {
+  kind: SecretKind;
+  pattern: RegExp;
+  preview: number;
+}
+
+const SECRET_PATTERNS: readonly SecretPattern[] = [
+  { kind: "aws-access-key-id", pattern: /\b(?:AKIA|ASIA)[0-9A-Z]{16}\b/, preview: 4 },
+  { kind: "stripe-secret-key", pattern: /\b(?:sk|rk)_live_[0-9A-Za-z]{16,}\b/, preview: 8 },
+  { kind: "google-api-key", pattern: /\bAIza[0-9A-Za-z_-]{35}\b/, preview: 6 },
+  { kind: "github-token", pattern: /\b(?:ghp|gho|ghu|ghs|ghr)_[0-9A-Za-z]{36}\b/, preview: 4 },
+  {
+    kind: "private-key",
+    pattern: /-----BEGIN (?:RSA |EC |DSA |OPENSSH |PGP )?PRIVATE KEY-----/,
+    preview: 40,
+  },
+];
+
+/**
+ * Identifier names that denote a credential, for the guarded generic fallback.
+ * Matched case-insensitively against a variable or property name.
+ */
+const SECRET_NAME =
+  /(?:api[_-]?key|secret|token|passwd|password|access[_-]?key|client[_-]?secret|auth[_-]?token)/i;
+
+/**
+ * Markers that disqualify a value from the generic rule: obvious placeholders,
+ * template interpolation, and angle-bracket stand-ins. Keeps the generic path
+ * from crying wolf on `"your-api-key-here"` or `` `${env.KEY}` ``.
+ */
+const SECRET_PLACEHOLDER =
+  /(example|xxxx|your[_-]|placeholder|change[_-]?me|dummy|sample|redacted|\.\.\.|<[^>]+>|\$\{)/i;
+
 /** Basename patterns for a standalone privacy / terms document. */
 const POLICY_DOC_PATTERNS: Record<"privacy" | "terms", RegExp> = {
   privacy: /^privacy(-policy)?\.(mdx?|html?|txt)$/i,
@@ -137,6 +179,7 @@ export function summarizeFiles(
     sdks: detectSdks(sourcesByRel),
     policyPages: detectPolicyPages(files, sourcesByRel, routes),
     piiSignals: detectPiiSignals(sourcesByRel),
+    secrets: detectSecrets(sourcesByRel),
   };
 }
 
@@ -557,6 +600,109 @@ function dedupeSignals(signals: PiiSignal[]): PiiSignal[] {
     seen.add(key);
     return true;
   });
+}
+
+// --- Committed secrets -------------------------------------------------------
+
+/**
+ * Find hard-coded credentials committed in the source. Two passes, narrowest
+ * first: high-confidence provider token shapes over every string/template
+ * literal, then a guarded generic rule for secret-named assignments holding a
+ * credential-shaped literal. At most one secret is reported per file:line, and
+ * the provider pass wins ties, so the same value is never double-counted.
+ */
+function detectSecrets(sourcesByRel: Map<string, SourceFile>): DetectedSecret[] {
+  const secrets: DetectedSecret[] = [];
+  const seen = new Set<string>();
+
+  const record = (kind: SecretKind, file: string, line: number, matched: string, preview: number) => {
+    const key = `${file}:${line}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    secrets.push({ kind, file, line, preview: redactSecret(matched, preview) });
+  };
+
+  for (const [rel, sf] of sourcesByRel) {
+    for (const node of stringLiteralNodes(sf)) {
+      const match = matchProviderSecret(node.getLiteralText());
+      if (match) record(match.kind, rel, node.getStartLineNumber(), match.matched, match.preview);
+    }
+
+    for (const { name, value, node } of namedStringAssignments(sf)) {
+      if (SECRET_NAME.test(name) && looksLikeCredential(value)) {
+        record("generic-api-key", rel, node.getStartLineNumber(), value, 4);
+      }
+    }
+  }
+
+  return secrets;
+}
+
+/** The first provider pattern that matches `value`, with the exact matched token. */
+function matchProviderSecret(
+  value: string,
+): { kind: SecretKind; matched: string; preview: number } | undefined {
+  for (const { kind, pattern, preview } of SECRET_PATTERNS) {
+    const found = value.match(pattern);
+    if (found) return { kind, matched: found[0], preview };
+  }
+  return undefined;
+}
+
+/**
+ * Whether a bare string value looks like a real credential rather than prose or
+ * a placeholder: long, single-token, mixed letters-and-digits, and free of the
+ * placeholder markers that mark an intentional stand-in.
+ */
+function looksLikeCredential(value: string): boolean {
+  return (
+    value.length >= 20 &&
+    value.length <= 200 &&
+    /^[A-Za-z0-9_\-+/=.~]+$/.test(value) &&
+    /[A-Za-z]/.test(value) &&
+    /[0-9]/.test(value) &&
+    !SECRET_PLACEHOLDER.test(value)
+  );
+}
+
+/** String and no-substitution template literals — the nodes that can hold a secret. */
+function stringLiteralNodes(sf: SourceFile) {
+  return [
+    ...sf.getDescendantsOfKind(SyntaxKind.StringLiteral),
+    ...sf.getDescendantsOfKind(SyntaxKind.NoSubstitutionTemplateLiteral),
+  ];
+}
+
+/** Secret-named variable/property assignments to a plain string literal. */
+function namedStringAssignments(
+  sf: SourceFile,
+): Array<{ name: string; value: string; node: Node }> {
+  const out: Array<{ name: string; value: string; node: Node }> = [];
+
+  const stringInitializer = (init: Node | undefined) =>
+    init && (Node.isStringLiteral(init) || Node.isNoSubstitutionTemplateLiteral(init))
+      ? init
+      : undefined;
+
+  for (const decl of sf.getVariableDeclarations()) {
+    const nameNode = decl.getNameNode();
+    const init = stringInitializer(decl.getInitializer());
+    if (Node.isIdentifier(nameNode) && init) {
+      out.push({ name: nameNode.getText(), value: init.getLiteralText(), node: init });
+    }
+  }
+
+  for (const prop of sf.getDescendantsOfKind(SyntaxKind.PropertyAssignment)) {
+    const init = stringInitializer(prop.getInitializer());
+    if (init) out.push({ name: prop.getName(), value: init.getLiteralText(), node: init });
+  }
+
+  return out;
+}
+
+/** Keep the leading `keep` chars of a value; append an ellipsis when truncated. */
+function redactSecret(value: string, keep: number): string {
+  return value.length <= keep ? value : `${value.slice(0, keep)}…`;
 }
 
 // --- Shared helpers ----------------------------------------------------------

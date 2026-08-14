@@ -122,6 +122,38 @@ export interface PiiSignal {
 }
 
 /**
+ * The kind of credential a committed-secret match represents. A closed set so
+ * the secrets check can switch on it for severity and phrasing. Provider kinds
+ * come from high-confidence token shapes; `generic-api-key` is the guarded
+ * fallback for a secret-named assignment holding a credential-shaped literal.
+ */
+export type SecretKind =
+  | "aws-access-key-id"
+  | "stripe-secret-key"
+  | "google-api-key"
+  | "github-token"
+  | "private-key"
+  | "generic-api-key";
+
+/**
+ * A hard-coded credential found committed in the source. Detection is
+ * deliberately narrow — high-confidence token shapes plus a guarded generic
+ * rule — because a false positive here (crying wolf on a placeholder) is the one
+ * failure mode this tool's audience can't catch. The full secret value is never
+ * stored: only a redacted {@link preview} and its location, enough to find and
+ * rotate it.
+ */
+export interface DetectedSecret {
+  kind: SecretKind;
+  /** Repo-relative path to the file the secret was committed in. */
+  file: string;
+  /** 1-based line number of the literal that held it. */
+  line: number;
+  /** Redacted preview (leading chars + "…"); never the full value. */
+  preview: string;
+}
+
+/**
  * The inspectable summary of what a repo collects and where it goes. This is
  * the whole product of the Parse stage.
  */
@@ -133,4 +165,6 @@ export interface Summary {
   sdks: DetectedSdk[];
   policyPages: PolicyPages;
   piiSignals: PiiSignal[];
+  /** Hard-coded credentials found committed in the source. */
+  secrets: DetectedSecret[];
 }
