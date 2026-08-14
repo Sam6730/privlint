@@ -17,6 +17,8 @@ import { Node, Project, SyntaxKind, ts } from "ts-morph";
 import type { SourceFile } from "ts-morph";
 import { assertDirectory } from "./paths.js";
 import { lookupSdk } from "./registry.js";
+import { messageOf, noopWarn } from "./types.js";
+import type { Warn } from "./types.js";
 import type {
   DetectedSecret,
   PiiSignal,
@@ -162,8 +164,15 @@ export function summarizeFiles(
 
   const sourcesByRel = new Map<string, SourceFile>();
   for (const [rel, content] of Object.entries(files)) {
-    if (isCodeFile(rel)) {
+    if (!isCodeFile(rel)) continue;
+    // The TypeScript parser recovers from syntax errors rather than throwing, so
+    // an unparseable file yields a tree of error nodes we simply extract nothing
+    // from. The try/catch is a last resort for a file so malformed the parser
+    // can't even construct it: skip that one file instead of aborting the run.
+    try {
       sourcesByRel.set(rel, project.createSourceFile(`/${rel}`, content, { overwrite: true }));
+    } catch {
+      // Intentionally skipped — one unbuildable file must not sink the analysis.
     }
   }
 
@@ -189,10 +198,13 @@ export function summarizeFiles(
  * docs), then delegates to {@link summarizeFiles}. Source code is read locally
  * and never leaves the machine.
  */
-export async function parseRepo(repoPath: string): Promise<Summary> {
+export async function parseRepo(
+  repoPath: string,
+  onWarn: Warn = noopWarn,
+): Promise<Summary> {
   await assertDirectory(repoPath, "parse");
   const files: Record<string, string> = {};
-  await collectFiles(repoPath, repoPath, files);
+  await collectFiles(repoPath, repoPath, files, onWarn);
   return summarizeFiles(files, repoPath);
 }
 
@@ -739,23 +751,48 @@ function isRelevantFile(rel: string): boolean {
   return POLICY_DOC_PATTERNS.privacy.test(base) || POLICY_DOC_PATTERNS.terms.test(base);
 }
 
+/**
+ * Walk `dir`, reading relevant files into `out`. Resilient to the messiness of
+ * real-world repos: a directory that can't be listed or a file that can't be
+ * read (permission denied, a broken symlink, a device/socket entry) is skipped
+ * with a warning rather than aborting the whole run. The goal is a partial,
+ * honest result over a crash — the walk keeps going and tells the user what it
+ * couldn't reach.
+ */
 async function collectFiles(
   root: string,
   dir: string,
   out: Record<string, string>,
+  onWarn: Warn,
 ): Promise<void> {
-  const entries = await readdir(dir, { withFileTypes: true });
+  let entries;
+  try {
+    entries = await readdir(dir, { withFileTypes: true });
+  } catch (error) {
+    onWarn(skipMessage("directory", relative(root, dir) || ".", error));
+    return;
+  }
+
   for (const entry of entries) {
     const abs = join(dir, entry.name);
     if (entry.isDirectory()) {
       if (SKIP_DIRS.has(entry.name) || entry.name.startsWith(".")) continue;
-      await collectFiles(root, abs, out);
+      await collectFiles(root, abs, out, onWarn);
       continue;
     }
     if (!entry.isFile()) continue;
     const rel = relative(root, abs).split(sep).join("/");
     if (!isRelevantFile(rel)) continue;
-    out[rel] = await readFile(abs, "utf8");
+    try {
+      out[rel] = await readFile(abs, "utf8");
+    } catch (error) {
+      onWarn(skipMessage("file", rel, error));
+    }
   }
+}
+
+/** A uniform "skipped X because Y" warning for an unreadable file or directory. */
+function skipMessage(kind: "file" | "directory", path: string, error: unknown): string {
+  return `Skipped a ${kind} that couldn't be read (${path}): ${messageOf(error)}`;
 }
 

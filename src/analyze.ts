@@ -2,7 +2,8 @@ import { runChecks } from "./checks/index.js";
 import { parseRepo } from "./parse.js";
 import { rankFindings } from "./rank.js";
 import { reason } from "./reason.js";
-import type { InterviewAnswers, LlmClient, Report } from "./types.js";
+import { noopWarn } from "./types.js";
+import type { InterviewAnswers, LlmClient, Report, Warn } from "./types.js";
 
 /**
  * Analyse a repository for data-privacy blind spots.
@@ -26,20 +27,24 @@ import type { InterviewAnswers, LlmClient, Report } from "./types.js";
  *                          condition the judgment reasoning.
  * @param llmClient         Injected model client for the judgment stage. A fake
  *                          client keeps this seam deterministic in tests.
+ * @param onWarn            Sink for non-fatal warnings (see {@link Warn}).
+ *                          Defaults to discarding them; the CLI routes them to
+ *                          stderr so stdout stays a clean report.
  */
 export async function analyze(
   repoPath: string,
   interviewAnswers: InterviewAnswers,
   llmClient: LlmClient,
+  onWarn: Warn = noopWarn,
 ): Promise<Report> {
-  const summary = await parseRepo(repoPath);
+  const summary = await parseRepo(repoPath, onWarn);
 
   // Both families reason over the same summary — deterministic facts and the
   // LLM's judgment — and are ranked together. Only the summary (plus the
   // interview answers) ever reaches the model; raw source never leaves.
   const findings = [
     ...runChecks(summary, interviewAnswers),
-    ...(await reason(summary, interviewAnswers, llmClient)),
+    ...(await reason(summary, interviewAnswers, llmClient, onWarn)),
   ];
 
   return {

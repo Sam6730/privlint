@@ -12,6 +12,7 @@ import { renderReportJson } from "./json.js";
 import { resolveLlmClient } from "./llm.js";
 import { parseRepo } from "./parse.js";
 import { renderReport } from "./render.js";
+import { messageOf } from "./types.js";
 import type { InterviewQuestion } from "./interview.js";
 import type { LlmEnv } from "./llm.js";
 
@@ -88,10 +89,15 @@ async function main(argv: string[]): Promise<number> {
   );
   const repoPath = resolve(positional[0] ?? ".");
 
+  // Route the pipeline's non-fatal warnings (see {@link Warn}) to stderr, so
+  // stdout stays a clean report or JSON payload a pipe or CI step can consume
+  // unpolluted.
+  const warn = (message: string) => process.stderr.write(`datashadow: ${message}\n`);
+
   // --print-summary surfaces the Parse-stage output so a user can verify exactly
   // what was detected before trusting any finding.
   if (args.includes("--print-summary")) {
-    const summary = await parseRepo(repoPath);
+    const summary = await parseRepo(repoPath, warn);
     process.stdout.write(JSON.stringify(summary, null, 2) + "\n");
     return 0;
   }
@@ -105,7 +111,7 @@ async function main(argv: string[]): Promise<number> {
   // Resolve the model provider from flags/env; when unconfigured this is the
   // not-configured client and the judgment stage is skipped.
   const llmClient = resolveLlmClient(llmEnvFrom(args, process.env));
-  const report = await analyze(repoPath, answers, llmClient);
+  const report = await analyze(repoPath, answers, llmClient, warn);
 
   // --json emits the same Report as a machine-readable payload for CI; the
   // human-readable report stays the default.
@@ -154,7 +160,6 @@ main(process.argv)
     process.exitCode = code;
   })
   .catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : String(error);
-    process.stderr.write(`datashadow: ${message}\n`);
+    process.stderr.write(`datashadow: ${messageOf(error)}\n`);
     process.exitCode = 1;
   });

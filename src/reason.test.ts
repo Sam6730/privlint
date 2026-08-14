@@ -275,6 +275,71 @@ describe("reason", () => {
   });
 });
 
+/** A client whose `complete` always rejects — a dead endpoint, bad key, etc. */
+function throwingLlmClient(error: Error): LlmClient {
+  return {
+    available: true,
+    async complete() {
+      throw error;
+    },
+  };
+}
+
+describe("reason — provider-error resilience", () => {
+  it("degrades to no judgment findings instead of throwing when the endpoint errors", async () => {
+    // A configured-but-failing provider (dead endpoint, 401 from a missing key)
+    // must never abort the run: judgment is best-effort and never the credibility
+    // floor, so the deterministic findings alongside it have to survive.
+    const client = throwingLlmClient(new Error("fetch failed"));
+
+    await expect(
+      reason(summaryWithVendor, UNANSWERED_INTERVIEW, client),
+    ).resolves.toEqual([]);
+  });
+
+  it("reports the degraded check through onWarn, naming the check and the cause", async () => {
+    const client = throwingLlmClient(new Error("401 Unauthorized"));
+    const warnings: string[] = [];
+
+    await reason(summaryWithVendor, UNANSWERED_INTERVIEW, client, (m) =>
+      warnings.push(m),
+    );
+
+    expect(warnings).toHaveLength(1);
+    // The message has to carry the underlying cause so a user can act on it.
+    expect(warnings[0]).toContain("401 Unauthorized");
+    // …and reassure that the deterministic findings weren't lost.
+    expect(warnings[0]?.toLowerCase()).toContain("deterministic");
+  });
+
+  it("keeps the two checks independent: one failing never suppresses the other", async () => {
+    // A repo that both drifts and calls an LLM. The client fails the drift call
+    // but answers the disclosure call, so the disclosure finding must still land
+    // even though its sibling threw.
+    const summaryBoth = emptySummary({ sdks: [stripeSdk, openaiSdk] });
+    const client: LlmClient = {
+      available: true,
+      async complete(request) {
+        if (request.prompt.includes("lawful basis")) return llmReply;
+        throw new Error("drift call failed");
+      },
+    };
+    const warnings: string[] = [];
+
+    const findings = await reason(
+      summaryBoth,
+      UNANSWERED_INTERVIEW,
+      client,
+      (m) => warnings.push(m),
+    );
+
+    expect(findings.map((f) => f.id)).toEqual(["llm-data-disclosure"]);
+    // The drift failure is surfaced, once, without taking disclosure down with it.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("drift call failed");
+  });
+});
+
 /**
  * A summary whose code calls an LLM API. Its policy names OpenAI so the drift
  * check stays silent — isolating the LLM-disclosure check as the only one that

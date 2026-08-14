@@ -1,5 +1,8 @@
+import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { parseRepo, summarizeFiles } from "./parse.js";
 
 describe("summarizeFiles — SDK detection", () => {
@@ -21,6 +24,18 @@ describe("summarizeFiles — SDK detection", () => {
       called: true,
       file: "src/pay.ts",
     });
+  });
+
+  it("tolerates an unparseable file and still analyses its readable siblings", () => {
+    // Real repos carry half-written and syntactically broken files. One must not
+    // sink the run: the parser recovers from syntax errors, so a garbage file
+    // simply contributes nothing while a valid sibling is still detected.
+    const summary = summarizeFiles({
+      "src/broken.ts": `export const x = {{{ <<< not valid @@@ typescript`,
+      "src/pay.ts": `import Stripe from "stripe";\nnew Stripe("k");`,
+    });
+
+    expect(summary.sdks.map((s) => s.package)).toEqual(["stripe"]);
   });
 
   it("records an imported-but-unused SDK as called: false", () => {
@@ -345,5 +360,41 @@ describe("parseRepo — reads from disk", () => {
 
   it("rejects a path that is not a directory", async () => {
     await expect(parseRepo(minimalRepo + "/index.js")).rejects.toThrow();
+  });
+});
+
+describe("parseRepo — resilience to unreadable files", () => {
+  let dir: string | undefined;
+
+  afterEach(async () => {
+    // Restore permissions so the temp tree can be removed even after chmod 000.
+    if (dir) {
+      await chmod(join(dir, "app", "locked.ts"), 0o644).catch(() => {});
+      await rm(dir, { recursive: true, force: true });
+      dir = undefined;
+    }
+  });
+
+  it("skips a file it can't read and still parses its readable siblings", async () => {
+    dir = await mkdtemp(join(tmpdir(), "datashadow-parse-"));
+    await mkdir(join(dir, "app"), { recursive: true });
+    // A readable file whose Stripe import must still be detected…
+    await writeFile(
+      join(dir, "app", "good.ts"),
+      `import Stripe from "stripe";\nnew Stripe("x");\n`,
+    );
+    // …next to one the process cannot read.
+    const locked = join(dir, "app", "locked.ts");
+    await writeFile(locked, `import Segment from "@segment/analytics-node";`);
+    await chmod(locked, 0o000);
+
+    const warnings: string[] = [];
+    const summary = await parseRepo(dir, (m) => warnings.push(m));
+
+    // The run completed and the readable file was still analysed.
+    expect(summary.sdks.map((s) => s.package)).toEqual(["stripe"]);
+    // The unreadable file was surfaced, by name, rather than aborting the walk.
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("locked.ts");
   });
 });

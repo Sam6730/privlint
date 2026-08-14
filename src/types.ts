@@ -123,6 +123,30 @@ export interface LlmClient {
   complete(request: LlmCompletionRequest): Promise<string>;
 }
 
+/**
+ * A sink for non-fatal warnings surfaced during a run — an unreadable file the
+ * walk skipped, or a judgment check that degraded because the model provider
+ * errored. Warnings are advisory: they never change the findings and never abort
+ * the run, so they belong on a side channel (stderr in the CLI) rather than in
+ * the report. Injected so the pipeline stays pure and the CLI owns where they
+ * go; it defaults to a no-op everywhere, so a caller that doesn't care can ignore
+ * it entirely.
+ */
+export type Warn = (message: string) => void;
+
+/** The default {@link Warn}: discard the message. Keeps warnings opt-in. */
+export const noopWarn: Warn = () => {};
+
+/**
+ * The human-readable message of a caught value. `catch` binds `unknown`, so this
+ * is the single place the pipeline turns one into a string — an `Error`'s
+ * `message`, or the value stringified — instead of repeating the ternary at
+ * every catch site.
+ */
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 /** The result of a run: the analysed repo and its ranked findings. */
 export interface Report {
   /** The repo path that was analysed. */

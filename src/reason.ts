@@ -33,12 +33,13 @@
  *   deterministic findings always survive. The two checks are independent: one
  *   check's empty gate or garbled reply never suppresses the other.
  */
-import { SEVERITY_RANK } from "./types.js";
+import { messageOf, noopWarn, SEVERITY_RANK } from "./types.js";
 import type {
   Finding,
   InterviewAnswers,
   LlmClient,
   Severity,
+  Warn,
 } from "./types.js";
 import type { DetectedSdk, Summary } from "./summary.js";
 
@@ -266,19 +267,24 @@ export async function reason(
   summary: Summary,
   answers: InterviewAnswers,
   client: LlmClient,
+  onWarn: Warn = noopWarn,
 ): Promise<Finding[]> {
   if (!client.available) return [];
 
   return [
     ...(await runGatedCheck(
+      "code-vs-policy drift",
       undisclosedProcessors(summary),
       (candidates) => buildDriftPrompt(candidates, summary, answers),
       client,
+      onWarn,
     )),
     ...(await runGatedCheck(
+      "LLM-data disclosure",
       calledLlmApis(summary),
       (candidates) => buildLlmDisclosurePrompt(candidates, summary, answers),
       client,
+      onWarn,
     )),
   ];
 }
@@ -287,15 +293,32 @@ export async function reason(
  * The shared shape of a judgment check: a deterministic candidate set gates a
  * single scoped model call. No candidates means the model is never consulted, so
  * a check with nothing to reason about stays silent and cheap.
+ *
+ * A provider that errors mid-call (dead endpoint, a 401 from a missing/invalid
+ * key, a timeout) degrades to no findings for *this* check rather than aborting
+ * the run: judgment is best-effort and never the credibility floor, so the
+ * deterministic findings alongside it always survive. The failure is surfaced
+ * via {@link Warn} so the user knows the check was skipped and why. Each check
+ * catches independently, so one provider failure never suppresses the other.
  */
 async function runGatedCheck(
+  name: string,
   candidates: DetectedSdk[],
   buildPrompt: (candidates: DetectedSdk[]) => string,
   client: LlmClient,
+  onWarn: Warn,
 ): Promise<Finding[]> {
   if (candidates.length === 0) return [];
-  const raw = await client.complete({ prompt: buildPrompt(candidates) });
-  return parseJudgmentFindings(raw);
+  try {
+    const raw = await client.complete({ prompt: buildPrompt(candidates) });
+    return parseJudgmentFindings(raw);
+  } catch (error) {
+    onWarn(
+      `Skipped the ${name} judgment check — the model provider errored: ` +
+        `${messageOf(error)}. Your deterministic findings are unaffected.`,
+    );
+    return [];
+  }
 }
 
 /** The severities we accept from a model reply, for validation. */
