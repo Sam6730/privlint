@@ -163,3 +163,56 @@ describe("analyze — code-vs-policy drift (judgment)", () => {
     expect(requests).toHaveLength(0);
   });
 });
+
+// A canned LLM-disclosure finding, phrased as conditional risk with a counsel
+// nudge — the shape the LLM-disclosure prompt asks the model for.
+const llmDisclosureReply = JSON.stringify({
+  findings: [
+    {
+      id: "llm-data-disclosure",
+      title: "User data may reach an LLM API without a confirmed lawful basis",
+      severity: "medium",
+      category: "disclosure",
+      consequence:
+        "Your code sends user-supplied text to OpenAI in a prompt, so personal data can leave your control; a lawful basis can't be confirmed from the code.",
+      fix: "Confirm a lawful basis and a signed DPA for the LLM provider, and disclose it; check with counsel whether consent is required.",
+    },
+  ],
+});
+
+/**
+ * The LLM-data-disclosure check (the second judgment differentiator), exercised
+ * end-to-end through `analyze` against a fixture that actually calls an LLM API.
+ * Its policy names OpenAI, so the drift check stays silent — leaving the LLM
+ * check as the sole model call, and proving a non-LLM repo never triggers it.
+ */
+describe("analyze — LLM-data disclosure (judgment)", () => {
+  it("flags a repo that calls an LLM API and sends only the summary", async () => {
+    const { client, requests } = fakeLlmClient(llmDisclosureReply);
+
+    const report = await analyze(fixture("llm"), UNANSWERED_INTERVIEW, client);
+
+    // The LLM-disclosure finding surfaces, labelled reasoned-about (not a fact).
+    const llm = report.findings.find((f) => f.id === "llm-data-disclosure");
+    expect(llm?.determination).toBe("reasoned-about");
+
+    // The model was consulted once — drift is silent since the policy names
+    // OpenAI — over the summary and interview answers, never the raw source.
+    expect(requests).toHaveLength(1);
+    const prompt = requests[0]!.prompt;
+    expect(prompt).toContain("OpenAI");
+    expect(prompt.toLowerCase()).toContain("lawful basis");
+    expect(prompt).toContain("summary.json:");
+    expect(prompt).not.toContain("apiKey");
+  });
+
+  it("never triggers on a repo that calls no LLM API", async () => {
+    // The clean repo wires no LLM SDK, so the LLM-disclosure gate is empty and a
+    // chatty model can't manufacture the risk.
+    const { client } = fakeLlmClient(llmDisclosureReply);
+
+    const report = await analyze(fixture("clean"), UNANSWERED_INTERVIEW, client);
+
+    expect(report.findings.some((f) => f.id === "llm-data-disclosure")).toBe(false);
+  });
+});

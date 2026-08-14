@@ -2,27 +2,36 @@
  * The Reason stage: judgment findings the deterministic checks can't produce,
  * reasoned by an injected {@link LlmClient} over the parsed {@link Summary}.
  *
- * The concrete judgment check in v1 is **code-vs-policy drift**: the vendors the
- * code actually calls (from the curated registry in the summary) diffed against
- * the processors the privacy policy names, surfacing undisclosed data sharing.
+ * Two judgment checks run in v1, each a deterministic gate feeding a scoped
+ * model call:
  *
- * The contract that makes this trustworthy — and testable — is narrow:
+ * - **code-vs-policy drift** ({@link undisclosedProcessors} /
+ *   {@link buildDriftPrompt}): the vendors the code actually calls diffed against
+ *   the processors the privacy policy names, surfacing undisclosed data sharing.
+ * - **LLM-data disclosure** ({@link calledLlmApis} /
+ *   {@link buildLlmDisclosurePrompt}): the LLM APIs the code actually calls,
+ *   flagged as user data that may reach a model without disclosure or a lawful
+ *   basis — the risk that prompt contents leave the founder's control.
+ *
+ * The contract that makes this trustworthy — and testable — is narrow, and holds
+ * for both checks:
  *
  * - The model is sent **only `summary.json` plus the interview answers**, never
- *   raw source. {@link buildDriftPrompt} is the single place the payload is
+ *   raw source. Each `build*Prompt` is the single place its payload is
  *   assembled, and it reads nothing but those two inputs.
- * - The diff itself is deterministic ({@link undisclosedProcessors}) and gates
- *   the model call: a repo whose policy already names every vendor produces no
- *   candidates, so the model is never consulted and can't be made to cry wolf.
+ * - A deterministic gate precedes each model call: a repo with no undisclosed
+ *   vendor (drift) or no called LLM API (disclosure) produces no candidates, so
+ *   the model is never consulted for that check and can't be made to cry wolf.
  *   This is what keeps the clean fixture silent even with a chatty client.
  * - The reply is expected as JSON (`{ "findings": [...] }`); {@link reason}
  *   maps each item to a {@link Finding}, forcing `determination` to
  *   `reasoned-about` so the model can't dress a guess up as a code-level fact,
- *   and the prompt demands conditional-risk phrasing plus a nudge to counsel so
+ *   and each prompt demands conditional-risk phrasing plus a nudge to counsel so
  *   no finding reads as a legal verdict.
  * - Judgment is best-effort and never the credibility floor: a garbled reply
  *   yields no judgment findings rather than crashing the run, so the
- *   deterministic findings always survive.
+ *   deterministic findings always survive. The two checks are independent: one
+ *   check's empty gate or garbled reply never suppresses the other.
  */
 import { SEVERITY_RANK } from "./types.js";
 import type {
@@ -77,6 +86,51 @@ export function undisclosedProcessors(summary: Summary): DetectedSdk[] {
 }
 
 /**
+ * The policy text as a judgment prompt should present it: the real extracted
+ * text, or an explicit note when there is no /privacy page or no readable text.
+ * Shared by both prompts so they describe "the policy" identically.
+ */
+function policyTextForPrompt(summary: Summary): string {
+  if (!summary.policyPages.privacy.present) {
+    return "(no /privacy page was found in the repo)";
+  }
+  return (
+    privacyText(summary).trim() ||
+    "(the /privacy page exists but has no readable text)"
+  );
+}
+
+/**
+ * The reply-format contract both judgment prompts demand: a machine-parseable
+ * `{ findings: [...] }` so replies map to findings via
+ * {@link parseJudgmentFindings}.
+ */
+const REPLY_SHAPE_INSTRUCTIONS: readonly string[] = [
+  "Respond with JSON only, in this exact shape:",
+  '{ "findings": [ { "id", "title", "severity", "category", "consequence", "fix" } ] }',
+  'where "severity" is one of: critical, high, medium, low.',
+  "Return an empty findings array if nothing is warranted.",
+];
+
+/**
+ * The shared factual tail of a judgment prompt: the policy text, the full
+ * summary, and the interview answers — the only inputs the model ever sees, and
+ * the single place that guarantees both prompts feed the model the same context.
+ */
+function contextFooter(summary: Summary, answers: InterviewAnswers): string[] {
+  return [
+    "privacy policy text:",
+    policyTextForPrompt(summary),
+    "",
+    "summary.json:",
+    JSON.stringify(summary, null, 2),
+    "",
+    "interview answers:",
+    JSON.stringify(answers, null, 2),
+  ];
+}
+
+/**
  * Assemble the drift prompt from the only two things the model is allowed to
  * see: the inspectable summary and the interview answers. Raw source never
  * appears here because it is never an input. The `candidates` are the
@@ -88,11 +142,6 @@ export function buildDriftPrompt(
   summary: Summary,
   answers: InterviewAnswers,
 ): string {
-  const policyText = !summary.policyPages.privacy.present
-    ? "(no /privacy page was found in the repo)"
-    : privacyText(summary).trim() ||
-      "(the /privacy page exists but has no readable text)";
-
   return [
     "You are a privacy-hygiene reviewer performing a code-vs-policy drift check.",
     "The parser found these third-party vendors wired into the code, and their",
@@ -109,10 +158,7 @@ export function buildDriftPrompt(
     "Do not invent vendors beyond the candidates listed. If a candidate is",
     "plausibly covered by a generic phrase in the policy, you may omit it.",
     "",
-    "Respond with JSON only, in this exact shape:",
-    '{ "findings": [ { "id", "title", "severity", "category", "consequence", "fix" } ] }',
-    'where "severity" is one of: critical, high, medium, low.',
-    "Return an empty findings array if nothing is warranted.",
+    ...REPLY_SHAPE_INSTRUCTIONS,
     "",
     "undisclosed-processor candidates (detected in code, absent from policy):",
     JSON.stringify(
@@ -126,21 +172,95 @@ export function buildDriftPrompt(
       2,
     ),
     "",
-    "privacy policy text:",
-    policyText,
-    "",
-    "summary.json:",
-    JSON.stringify(summary, null, 2),
-    "",
-    "interview answers:",
-    JSON.stringify(answers, null, 2),
+    ...contextFooter(summary, answers),
   ].join("\n");
 }
 
 /**
- * Run the Reason stage: skip entirely when no provider is configured or when the
- * deterministic diff finds no undisclosed vendors, otherwise send the drift
- * prompt and map the reply to `reasoned-about` findings.
+ * The deterministic half of the LLM-disclosure check: the LLM APIs the code
+ * actually calls. A called LLM SDK means prompt contents — which routinely carry
+ * user data — can leave for a model provider, so each is a candidate for "user
+ * data sent to an LLM API without disclosure/basis".
+ *
+ * Only *called* SDKs count, for the same reason as the drift check: an imported-
+ * but-never-invoked LLM dependency isn't sending prompts anywhere, so flagging it
+ * would be a false positive. Deduped by destination so one provider reached via
+ * two packages is a single candidate.
+ *
+ * This runs before the model so a repo that calls no LLM API skips the model
+ * entirely — the gate that keeps a non-LLM repo silent.
+ */
+export function calledLlmApis(summary: Summary): DetectedSdk[] {
+  const seen = new Set<string>();
+  const candidates: DetectedSdk[] = [];
+  for (const sdk of summary.sdks) {
+    if (sdk.dataCategory !== "llm") continue;
+    if (!sdk.called) continue;
+    if (seen.has(sdk.destination)) continue;
+    seen.add(sdk.destination);
+    candidates.push(sdk);
+  }
+  return candidates;
+}
+
+/**
+ * Assemble the LLM-disclosure prompt from the only two things the model is
+ * allowed to see: the inspectable summary and the interview answers. Raw source
+ * never appears here because it is never an input. The `candidates` are the
+ * deterministically-detected called LLM APIs — highlighted so the model reasons
+ * about disclosure and lawful basis for the right providers.
+ */
+export function buildLlmDisclosurePrompt(
+  candidates: DetectedSdk[],
+  summary: Summary,
+  answers: InterviewAnswers,
+): string {
+  return [
+    "You are a privacy-hygiene reviewer checking whether user data may reach an",
+    "LLM API without disclosure or a lawful basis. The parser found these LLM",
+    "providers wired into and called by the code. Prompts sent to them routinely",
+    "carry personal data, which then leaves the developer's control.",
+    "",
+    "For each provider that plausibly receives user data without being disclosed,",
+    "or without an evident lawful basis, emit one finding. Reason over two axes:",
+    "- disclosure: is the provider named in the privacy policy text below?",
+    "- lawful basis: is there an evident basis (consent, a DPA, contract) for",
+    "  sending user data to it? You usually cannot confirm this from the summary —",
+    "  say so and phrase the gap as conditional risk.",
+    "Phrase every finding as conditional risk plus a nudge to verify with counsel —",
+    "never a legal conclusion, and never assert the developer is violating any law.",
+    "Let the interview answers condition applicability, severity, and wording:",
+    "- EU/UK users sharpen the GDPR lawful-basis edge; their absence blunts it",
+    "  (CCPA duties may still apply).",
+    "- No signed DPAs makes the gap sharper; signed DPAs soften it.",
+    "- Selling or sharing data sharpens the CCPA edge, since sending prompt",
+    "  contents to an LLM provider can itself be a 'share'.",
+    "Do not invent providers beyond the candidates listed. If a candidate is",
+    "plausibly disclosed by a generic phrase in the policy, you may omit it.",
+    "",
+    ...REPLY_SHAPE_INSTRUCTIONS,
+    "",
+    "called LLM-API providers (detected in code):",
+    JSON.stringify(
+      candidates.map((c) => ({
+        provider: c.destination,
+        dataCategory: c.dataCategory,
+        whyItMatters: c.whyItMatters,
+        package: c.package,
+      })),
+      null,
+      2,
+    ),
+    "",
+    ...contextFooter(summary, answers),
+  ].join("\n");
+}
+
+/**
+ * Run the Reason stage: skip entirely when no provider is configured, otherwise
+ * run each judgment check behind its own deterministic gate and concatenate the
+ * `reasoned-about` findings. The checks are independent — one's empty gate or
+ * garbled reply never suppresses the other.
  */
 export async function reason(
   summary: Summary,
@@ -149,13 +269,32 @@ export async function reason(
 ): Promise<Finding[]> {
   if (!client.available) return [];
 
-  const candidates = undisclosedProcessors(summary);
+  return [
+    ...(await runGatedCheck(
+      undisclosedProcessors(summary),
+      (candidates) => buildDriftPrompt(candidates, summary, answers),
+      client,
+    )),
+    ...(await runGatedCheck(
+      calledLlmApis(summary),
+      (candidates) => buildLlmDisclosurePrompt(candidates, summary, answers),
+      client,
+    )),
+  ];
+}
+
+/**
+ * The shared shape of a judgment check: a deterministic candidate set gates a
+ * single scoped model call. No candidates means the model is never consulted, so
+ * a check with nothing to reason about stays silent and cheap.
+ */
+async function runGatedCheck(
+  candidates: DetectedSdk[],
+  buildPrompt: (candidates: DetectedSdk[]) => string,
+  client: LlmClient,
+): Promise<Finding[]> {
   if (candidates.length === 0) return [];
-
-  const raw = await client.complete({
-    prompt: buildDriftPrompt(candidates, summary, answers),
-  });
-
+  const raw = await client.complete({ prompt: buildPrompt(candidates) });
   return parseJudgmentFindings(raw);
 }
 

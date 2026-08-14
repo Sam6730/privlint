@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { emptySummary } from "./checks/summary-fixture.js";
-import { buildDriftPrompt, reason, undisclosedProcessors } from "./reason.js";
+import {
+  buildDriftPrompt,
+  buildLlmDisclosurePrompt,
+  calledLlmApis,
+  reason,
+  undisclosedProcessors,
+} from "./reason.js";
 import { UNANSWERED_INTERVIEW } from "./types.js";
 import type { DetectedSdk } from "./summary.js";
 import type { LlmCompletionRequest, LlmClient } from "./types.js";
@@ -45,6 +51,17 @@ const segmentSdk: DetectedSdk = {
   imported: true,
   called: true,
   file: "app/api/charge/route.ts",
+};
+
+/** A detected, called OpenAI SDK — the signal the LLM-disclosure check reads. */
+const openaiSdk: DetectedSdk = {
+  package: "openai",
+  dataCategory: "llm",
+  destination: "OpenAI",
+  whyItMatters: "whatever you put in a prompt is sent to OpenAI",
+  imported: true,
+  called: true,
+  file: "app/api/chat/route.ts",
 };
 
 /** A summary with a wired vendor and no /privacy page — pure drift. */
@@ -255,5 +272,155 @@ describe("reason", () => {
 
     expect(findings).toEqual([]);
     expect(called).toBe(false);
+  });
+});
+
+/**
+ * A summary whose code calls an LLM API. Its policy names OpenAI so the drift
+ * check stays silent — isolating the LLM-disclosure check as the only one that
+ * fires, which is what lets these tests assert a single, LLM-specific model call.
+ */
+const summaryWithLlm = emptySummary({
+  routes: [
+    { path: "/api/chat", method: "POST", source: "next-app", file: "app/api/chat/route.ts" },
+  ],
+  sdks: [openaiSdk],
+  policyPages: {
+    privacy: {
+      present: true,
+      file: "app/privacy/page.tsx",
+      text: "We use OpenAI to power chat features.",
+    },
+    terms: { present: false },
+  },
+});
+
+describe("calledLlmApis", () => {
+  it("flags a called LLM SDK — user data can flow to the model in a prompt", () => {
+    expect(calledLlmApis(summaryWithLlm).map((s) => s.destination)).toEqual(["OpenAI"]);
+  });
+
+  it("ignores an imported-but-never-called LLM SDK — no prompt actually leaves", () => {
+    const importedNotCalled: DetectedSdk = { ...openaiSdk, called: false };
+    expect(calledLlmApis(emptySummary({ sdks: [importedNotCalled] }))).toEqual([]);
+  });
+
+  it("ignores non-LLM vendors — a payment or analytics SDK isn't an LLM API", () => {
+    expect(calledLlmApis(emptySummary({ sdks: [stripeSdk, segmentSdk] }))).toEqual([]);
+  });
+
+  it("dedupes by destination so one provider is one candidate", () => {
+    const openaiAlias: DetectedSdk = { ...openaiSdk, package: "openai-edge" };
+    expect(
+      calledLlmApis(emptySummary({ sdks: [openaiSdk, openaiAlias] })).map((s) => s.destination),
+    ).toEqual(["OpenAI"]);
+  });
+
+  it("returns nothing when no LLM SDK was detected", () => {
+    expect(calledLlmApis(emptySummary())).toEqual([]);
+  });
+});
+
+describe("buildLlmDisclosurePrompt", () => {
+  it("sends the LLM provider, the policy text, and the answers — never raw source", () => {
+    const candidates = calledLlmApis(summaryWithLlm);
+    const prompt = buildLlmDisclosurePrompt(candidates, summaryWithLlm, {
+      hasEuUkUsers: true,
+      hasSignedDpas: false,
+      sellsOrSharesData: "unknown",
+    });
+
+    // The LLM provider is named so the model reasons about the right vendor.
+    expect(prompt).toContain("OpenAI");
+    // It reasons over the summary, and the summary alone, as the factual input.
+    expect(prompt).toContain(JSON.stringify(summaryWithLlm, null, 2));
+    // The interview answers condition applicability/severity and must be present.
+    expect(prompt).toContain("hasSignedDpas");
+    // All three business facts steer the reasoning — including the sell/share
+    // answer, which maps to a CCPA "share" when prompts carry personal data.
+    expect(prompt.toLowerCase()).toContain("share");
+    // It frames the two axes the issue names: disclosure and a lawful basis.
+    expect(prompt.toLowerCase()).toContain("disclos");
+    expect(prompt.toLowerCase()).toContain("lawful basis");
+    // It asks for a machine-parseable reply so responses map to findings.
+    expect(prompt.toLowerCase()).toContain("json");
+    // It must steer away from legal verdicts and toward a counsel nudge.
+    expect(prompt.toLowerCase()).toContain("counsel");
+  });
+});
+
+const llmReply = JSON.stringify({
+  findings: [
+    {
+      id: "llm-data-disclosure",
+      title: "User data may reach OpenAI without disclosure or a lawful basis",
+      severity: "high",
+      category: "disclosure",
+      consequence:
+        "Your code calls OpenAI, so anything in a prompt can include personal data leaving your control, and your policy doesn't cover it.",
+      fix: "Disclose the LLM processor and confirm a lawful basis; verify with counsel whether consent or a DPA is required.",
+    },
+  ],
+});
+
+describe("reason — LLM-disclosure judgment", () => {
+  it("maps a canned reply to a reasoned-about finding when the code calls an LLM API", async () => {
+    const { client, requests } = fakeLlmClient(llmReply);
+
+    const findings = await reason(summaryWithLlm, UNANSWERED_INTERVIEW, client);
+
+    // The model was consulted once, with the LLM-disclosure prompt for OpenAI.
+    expect(requests).toHaveLength(1);
+    expect(requests[0]?.prompt).toBe(
+      buildLlmDisclosurePrompt(
+        calledLlmApis(summaryWithLlm),
+        summaryWithLlm,
+        UNANSWERED_INTERVIEW,
+      ),
+    );
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]).toMatchObject({
+      id: "llm-data-disclosure",
+      // The trust signal is fixed by the stage, not taken from the model.
+      determination: "reasoned-about",
+    });
+  });
+
+  it("stays silent WITHOUT calling the model when no LLM API is used", async () => {
+    // The deterministic gate: no called LLM SDK means nothing to reason about, so
+    // a chatty model can't invent an LLM-disclosure risk on a repo that has none.
+    const { client, requests } = fakeLlmClient(llmReply);
+
+    const findings = await reason(summaryVendorDisclosed, UNANSWERED_INTERVIEW, client);
+
+    expect(findings.some((f) => f.id === "llm-data-disclosure")).toBe(false);
+    // summaryVendorDisclosed's one vendor is disclosed, so drift is silent too —
+    // and with no LLM SDK, the model is never consulted at all.
+    expect(requests).toHaveLength(0);
+  });
+
+  it("runs both judgment checks when a repo both drifts and calls an LLM", async () => {
+    // A repo with an undisclosed vendor AND a called LLM API exercises both gates,
+    // so the model is consulted once per check.
+    const summaryBoth = emptySummary({ sdks: [stripeSdk, openaiSdk] });
+    const requests: LlmCompletionRequest[] = [];
+    const client: LlmClient = {
+      available: true,
+      async complete(request) {
+        requests.push(request);
+        // Reply keyed off which check's prompt this is, so both findings surface.
+        return request.prompt.includes("lawful basis") ? llmReply : cannedResponse;
+      },
+    };
+
+    const findings = await reason(summaryBoth, UNANSWERED_INTERVIEW, client);
+
+    expect(requests).toHaveLength(2);
+    expect(findings.map((f) => f.id).sort()).toEqual([
+      "llm-data-disclosure",
+      "undisclosed-processor",
+    ]);
+    expect(findings.every((f) => f.determination === "reasoned-about")).toBe(true);
   });
 });
