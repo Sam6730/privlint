@@ -8,6 +8,7 @@ import {
   flagValue,
   INTERVIEW_VALUE_FLAGS,
 } from "./interview.js";
+import { renderReportJson } from "./json.js";
 import { resolveLlmClient } from "./llm.js";
 import { parseRepo } from "./parse.js";
 import { renderReport } from "./render.js";
@@ -20,6 +21,8 @@ Usage:
   datashadow [path]            Analyse the repo at [path] (default: current directory)
   datashadow --print-summary   Print the inspectable summary.json the tool built
                                from your code, instead of the report
+  datashadow --json            Emit the report as machine-readable JSON (for CI)
+                               instead of the human-readable report
   datashadow --help            Show this help
 
 Interview (three business facts the code can't reveal, asked once). On a terminal
@@ -103,6 +106,13 @@ async function main(argv: string[]): Promise<number> {
   // not-configured client and the judgment stage is skipped.
   const llmClient = resolveLlmClient(llmEnvFrom(args, process.env));
   const report = await analyze(repoPath, answers, llmClient);
+
+  // --json emits the same Report as a machine-readable payload for CI; the
+  // human-readable report stays the default.
+  if (args.includes("--json")) {
+    process.stdout.write(renderReportJson(report) + "\n");
+    return 0;
+  }
 
   process.stdout.write(renderReport(report) + "\n");
   return 0;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { DISCLAIMER, renderReport } from "./render.js";
+import { renderReport } from "./render.js";
+import { DISCLAIMER } from "./types.js";
 import type { Finding, Report } from "./types.js";
 
 function report(findings: Finding[]): Report {

@@ -1,15 +1,5 @@
-import { DETERMINATION_LABELS } from "./types.js";
+import { DETERMINATION_LABELS, DISCLAIMER } from "./types.js";
 import type { Finding, Report, Severity } from "./types.js";
-
-/**
- * The persistent disclaimer. Rendered on every run so the user always
- * understands the tool's limits: it flags hygiene problems, it is not legal
- * advice, and a clean result is not a guarantee of compliance.
- */
-export const DISCLAIMER =
-  "This is a privacy-hygiene check, not legal advice. It flags likely problems " +
-  "to get reviewed; it can't see your vendor contracts or data residency, and a " +
-  "clean result doesn't prove compliance. When in doubt, check with counsel.";
 
 /** Symbols used to make severity scannable in a terminal. */
 const SEVERITY_MARK: Record<Severity, string> = {

@@ -42,6 +42,18 @@ export const DETERMINATION_LABELS: Record<DeterminationMethod, string> = {
 };
 
 /**
+ * The persistent not-legal-advice disclaimer. A domain constant, not a
+ * rendering concern: it is carried into every output (the human-readable report
+ * and the machine-readable JSON alike) so the user always understands the
+ * tool's limits — it flags hygiene problems, it is not legal advice, and a
+ * clean result is not a guarantee of compliance.
+ */
+export const DISCLAIMER =
+  "This is a privacy-hygiene check, not legal advice. It flags likely problems " +
+  "to get reviewed; it can't see your vendor contracts or data residency, and a " +
+  "clean result doesn't prove compliance. When in doubt, check with counsel.";
+
+/**
  * A single privacy-hygiene finding, in plain language.
  *
  * Findings never state legal conclusions: deterministic checks may state facts,
