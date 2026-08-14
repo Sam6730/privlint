@@ -1,0 +1,31 @@
+# --- AI / agent footprint ---
+# Agent instructions & config
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.claude/
+.cursor/
+.cursorrules
+.windsurfrules
+.aider*
+.continue/
+.roo/
+.github/copilot-instructions.md
+
+# Agent-generated docs & domain notes
+docs/
+CONTEXT.md
+CONTEXT-MAP.md
+
+# Scratch / working area for agent skills
+.scratch/
+
+# --- Node / build ---
+node_modules/
+dist/
+*.tsbuildinfo
+npm-debug.log*
+
+# --- OS / editor junk ---
+.DS_Store
+.Rhistory

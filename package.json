@@ -1,0 +1,28 @@
+{
+  "name": "datashadow",
+  "version": "0.0.1",
+  "description": "A CLI that scans a JS/TS codebase for data-privacy blind spots and reports them in plain language.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "datashadow": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "prepublishOnly": "npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
