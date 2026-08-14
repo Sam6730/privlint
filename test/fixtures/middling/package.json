@@ -1,0 +1,9 @@
+{
+  "name": "middling-fixture",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "mixpanel": "^0.18.0",
+    "next": "^14.0.0"
+  }
+}
