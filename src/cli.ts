@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline/promises";
 import { analyze } from "./analyze.js";
+import { shouldColorize } from "./color.js";
 import {
   collectInterview,
   flagValue,
@@ -24,6 +25,8 @@ Usage:
                                from your code, instead of the report
   datashadow --json            Emit the report as machine-readable JSON (for CI)
                                instead of the human-readable report
+  datashadow --no-color        Force plain output, no ANSI color (color is on by
+                               default only on an interactive terminal)
   datashadow --help            Show this help
 
 Interview (three business facts the code can't reveal, asked once). On a terminal
@@ -120,7 +123,15 @@ async function main(argv: string[]): Promise<number> {
     return 0;
   }
 
-  process.stdout.write(renderReport(report) + "\n");
+  // Colorize the human-readable report only for an interactive terminal (and
+  // honoring --no-color / NO_COLOR / FORCE_COLOR). The --json and
+  // --print-summary paths above never receive a color flag, so they stay plain.
+  const color = shouldColorize({
+    isTTY: Boolean(process.stdout.isTTY),
+    env: process.env,
+    noColorFlag: args.includes("--no-color"),
+  });
+  process.stdout.write(renderReport(report, { color }) + "\n");
   return 0;
 }
 
