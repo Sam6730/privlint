@@ -376,7 +376,7 @@ describe("parseRepo — resilience to unreadable files", () => {
   });
 
   it("skips a file it can't read and still parses its readable siblings", async () => {
-    dir = await mkdtemp(join(tmpdir(), "datashadow-parse-"));
+    dir = await mkdtemp(join(tmpdir(), "privlint-parse-"));
     await mkdir(join(dir, "app"), { recursive: true });
     // A readable file whose Stripe import must still be detected…
     await writeFile(

@@ -29,7 +29,7 @@ export interface JsonFinding extends Finding {
 }
 
 /**
- * The full machine-readable report, emitted by `datashadow --json`. This is the
+ * The full machine-readable report, emitted by `privlint --json`. This is the
  * stable contract for wiring runs into CI:
  *
  * - `schemaVersion` — {@link JSON_SCHEMA_VERSION}; pin against it.
@@ -68,7 +68,7 @@ function toJsonFinding(finding: Finding): JsonFinding {
 
 /**
  * Render a {@link Report} as a pretty-printed JSON string — the payload emitted
- * by `datashadow --json`. Two-space indent keeps it diff-friendly when checked
+ * by `privlint --json`. Two-space indent keeps it diff-friendly when checked
  * into a CI artifact.
  */
 export function renderReportJson(report: Report): string {

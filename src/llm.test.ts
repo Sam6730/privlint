@@ -80,9 +80,9 @@ describe("createOpenAiClient", () => {
 describe("resolveLlmClient", () => {
   it("builds a real client when base URL and model are configured", () => {
     const client = resolveLlmClient({
-      DATASHADOW_LLM_BASE_URL: "https://api.example.com/v1",
-      DATASHADOW_LLM_MODEL: "gpt-test",
-      DATASHADOW_LLM_API_KEY: "sk-123",
+      PRIVLINT_LLM_BASE_URL: "https://api.example.com/v1",
+      PRIVLINT_LLM_MODEL: "gpt-test",
+      PRIVLINT_LLM_API_KEY: "sk-123",
     });
 
     expect(client.available).toBe(true);
@@ -91,7 +91,7 @@ describe("resolveLlmClient", () => {
   it("falls back to the not-configured client when config is incomplete", () => {
     // Base URL without a model isn't enough to talk to a provider.
     const client = resolveLlmClient({
-      DATASHADOW_LLM_BASE_URL: "https://api.example.com/v1",
+      PRIVLINT_LLM_BASE_URL: "https://api.example.com/v1",
     });
 
     expect(client).toBe(notConfiguredLlmClient);

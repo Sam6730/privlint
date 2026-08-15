@@ -1,11 +1,15 @@
 {
-  "name": "datashadow",
-  "version": "0.0.1",
+  "name": "privlint",
+  "version": "0.1.0",
   "description": "A CLI that scans a JS/TS codebase for data-privacy blind spots and reports them in plain language.",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Sam6730/privlint.git"
+  },
   "bin": {
-    "datashadow": "dist/cli.js"
+    "privlint": "dist/cli.js"
   },
   "files": [
     "dist"

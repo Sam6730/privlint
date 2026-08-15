@@ -1,14 +1,14 @@
-# datashadow
+# privlint
 
 **Point it at your JS/TS repo. It tells you — in plain English — where your code is quietly breaking privacy rules, why it matters, and the one-line fix.**
 
-Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA," and half of them don't even speak Next.js. `datashadow` is built for the founder who collects emails, runs payments through Stripe, pipes events into analytics, and has no idea which laws apply or where the code already trips them. One command, no config, no code changes, nothing leaves your machine.
+Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA," and half of them don't even speak Next.js. `privlint` is built for the founder who collects emails, runs payments through Stripe, pipes events into analytics, and has no idea which laws apply or where the code already trips them. One command, no config, no code changes, nothing leaves your machine.
 
 ```bash
-npx datashadow
+npx privlint
 ```
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) · Node ≥ 18 · JavaScript / TypeScript (Next.js · Node · Express)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) ![Node ≥ 18](https://img.shields.io/badge/Node-%E2%89%A5%2018-5FA04E?logo=nodedotjs&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white) ![Express](https://img.shields.io/badge/Express-000000?logo=express&logoColor=white)
 
 ---
 
@@ -16,14 +16,16 @@ npx datashadow
 
 The scripted walkthrough below is the demo — four steps, real output, ending on silence. A screen recording of exactly this run will be linked here.
 
-<!-- Author: record this walkthrough and embed it above, e.g. ![60-second demo](docs/demo.gif) -->
+<!-- Author: record this walkthrough and embed it above as ![60-second demo](docs/demo.gif).
+     Step-by-step recording instructions: docs/demo-recording.md -->
+
 
 **1. Run it on a leaky repo.** No flags, no setup.
 
 ```console
-$ npx datashadow ./my-app
+$ npx privlint ./my-app
 
-9 findings, most serious first:
+8 findings, most serious first:
 
 [CRITICAL] Committed AWS access key ID in app/api/charge/route.ts:9 (AKIA…)  (secrets · checked in code)
   Why it matters: Anyone who can read this repo can use this AWS key to spin up
@@ -46,14 +48,14 @@ Every finding says **how it was determined** (`checked in code` / `reasoned abou
 **2. Don't trust it? Inspect what it saw.** The tool reasons over a small, structured `summary.json` it builds from your code — not a black box:
 
 ```console
-$ npx datashadow ./my-app --print-summary
+$ npx privlint ./my-app --print-summary
 
 {
   "sdks": [
     { "package": "stripe",  "destination": "Stripe",  "dataCategory": "payment",   "called": true },
     { "package": "@segment/analytics-node", "destination": "Segment", "dataCategory": "analytics", "called": true }
   ],
-  "policyPages": { "privacy": { "present": false }, "terms": { "present": false } },
+  "policyPages": { "privacy": { "present": true }, "terms": { "present": false } },
   "piiSignals": [ { "kind": "log", "field": "email", "line": 19 }, … ]
 }
 ```
@@ -61,10 +63,10 @@ $ npx datashadow ./my-app --print-summary
 **3. Add a model provider for the judgment checks.** Bring your own key (or a local model). The model only ever sees that `summary.json` — **never your source code** — and reasons about things a regex can't, like whether the vendors your code calls are actually named in your privacy policy:
 
 ```console
-$ DATASHADOW_LLM_BASE_URL=https://api.openai.com/v1 \
-  DATASHADOW_LLM_MODEL=gpt-4o-mini \
-  DATASHADOW_LLM_API_KEY=sk-… \
-  npx datashadow ./my-app
+$ PRIVLINT_LLM_BASE_URL=https://api.openai.com/v1 \
+  PRIVLINT_LLM_MODEL=gpt-4o-mini \
+  PRIVLINT_LLM_API_KEY=sk-… \
+  npx privlint ./my-app
 
 [HIGH]     Stripe and Segment aren't named in your privacy policy  (disclosure · reasoned about)
   Why it matters: Your code sends card and event data to Stripe and Segment, but
@@ -77,7 +79,7 @@ $ DATASHADOW_LLM_BASE_URL=https://api.openai.com/v1 \
 **4. Run it on a clean repo — and it goes quiet.** The single most important behaviour: no crying wolf.
 
 ```console
-$ npx datashadow ./clean-app
+$ npx privlint ./clean-app
 
 No findings. Nothing flagged in this run.
 ————
@@ -91,27 +93,27 @@ This is a privacy-hygiene check, not legal advice…
 No install needed — `npx` runs the latest published version:
 
 ```bash
-npx datashadow [path]      # defaults to the current directory
+npx privlint [path]      # defaults to the current directory
 ```
 
 Or install it if you'll run it often:
 
 ```bash
-npm install -g datashadow
-datashadow ./my-app
+npm install -g privlint
+privlint ./my-app
 ```
 
 | Command | What it does |
 | --- | --- |
-| `datashadow [path]` | Analyse the repo and print the ranked, plain-language report |
-| `datashadow --print-summary` | Print the inspectable `summary.json` the tool built from your code |
-| `datashadow --json` | Emit the report as machine-readable JSON (for CI) |
-| `datashadow --help` | Full flag reference, including the interview and model-provider options |
+| `privlint [path]` | Analyse the repo and print the ranked, plain-language report |
+| `privlint --print-summary` | Print the inspectable `summary.json` the tool built from your code |
+| `privlint --json` | Emit the report as machine-readable JSON (for CI) |
+| `privlint --help` | Full flag reference, including the interview and model-provider options |
 
 **Three business facts the code can't reveal** are asked once per run (on a terminal), or supplied non-interactively for CI:
 
 ```bash
-datashadow --eu-uk-users yes --signed-dpas no --sells-shares-data no --no-interview
+privlint --eu-uk-users yes --signed-dpas no --sells-shares-data no --no-interview
 ```
 
 They condition which findings apply — e.g. CCPA "sell/share" duties only surface if you say you sell or share data.
@@ -143,9 +145,9 @@ The two `reasoned about` checks run only when you configure a model provider; ev
 The judgment checks work against any **OpenAI-compatible** `/chat/completions` endpoint — a hosted API or a fully local model (Ollama, LM Studio) at no cost:
 
 ```bash
-export DATASHADOW_LLM_BASE_URL=http://localhost:11434/v1   # e.g. Ollama
-export DATASHADOW_LLM_MODEL=llama3
-# DATASHADOW_LLM_API_KEY is env-only by design — a flag would leak it into your
+export PRIVLINT_LLM_BASE_URL=http://localhost:11434/v1   # e.g. Ollama
+export PRIVLINT_LLM_MODEL=llama3
+# PRIVLINT_LLM_API_KEY is env-only by design — a flag would leak it into your
 # shell history and the process table (`ps`). Omit it for a local model.
 ```
 

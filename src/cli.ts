@@ -17,17 +17,17 @@ import { messageOf } from "./types.js";
 import type { InterviewQuestion } from "./interview.js";
 import type { LlmEnv } from "./llm.js";
 
-const USAGE = `datashadow — a privacy-hygiene check for your JS/TS codebase.
+const USAGE = `privlint — a privacy-hygiene check for your JS/TS codebase.
 
 Usage:
-  datashadow [path]            Analyse the repo at [path] (default: current directory)
-  datashadow --print-summary   Print the inspectable summary.json the tool built
+  privlint [path]            Analyse the repo at [path] (default: current directory)
+  privlint --print-summary   Print the inspectable summary.json the tool built
                                from your code, instead of the report
-  datashadow --json            Emit the report as machine-readable JSON (for CI)
+  privlint --json            Emit the report as machine-readable JSON (for CI)
                                instead of the human-readable report
-  datashadow --no-color        Force plain output, no ANSI color (color is on by
+  privlint --no-color        Force plain output, no ANSI color (color is on by
                                default only on an interactive terminal)
-  datashadow --help            Show this help
+  privlint --help            Show this help
 
 Interview (three business facts the code can't reveal, asked once). On a terminal
 they're prompted for; supply them non-interactively for CI, or --no-interview to
@@ -41,9 +41,9 @@ skip prompting (unanswered facts stay "unknown"):
 Model provider (optional — the judgment checks reason over the summary.json,
 never your source; skipped entirely when unset). Bring your own key against any
 OpenAI-compatible endpoint, including a local model (Ollama/LM Studio):
-  --llm-base-url <url>   or  DATASHADOW_LLM_BASE_URL
-  --llm-model <name>     or  DATASHADOW_LLM_MODEL
-  DATASHADOW_LLM_API_KEY   the API key (env only; omit for a local model)
+  --llm-base-url <url>   or  PRIVLINT_LLM_BASE_URL
+  --llm-model <name>     or  PRIVLINT_LLM_MODEL
+  PRIVLINT_LLM_API_KEY   the API key (env only; omit for a local model)
 
 The key is env-only by design: a flag would land in your shell history and the
 process table (visible via \`ps\`), so it's never accepted on the command line.
@@ -57,11 +57,11 @@ process table (visible via \`ps\`), so it's never accepted on the command line.
  */
 function llmEnvFrom(args: string[], env: NodeJS.ProcessEnv): LlmEnv {
   return {
-    DATASHADOW_LLM_BASE_URL:
-      flagValue(args, "--llm-base-url") ?? env.DATASHADOW_LLM_BASE_URL,
-    DATASHADOW_LLM_MODEL:
-      flagValue(args, "--llm-model") ?? env.DATASHADOW_LLM_MODEL,
-    DATASHADOW_LLM_API_KEY: env.DATASHADOW_LLM_API_KEY,
+    PRIVLINT_LLM_BASE_URL:
+      flagValue(args, "--llm-base-url") ?? env.PRIVLINT_LLM_BASE_URL,
+    PRIVLINT_LLM_MODEL:
+      flagValue(args, "--llm-model") ?? env.PRIVLINT_LLM_MODEL,
+    PRIVLINT_LLM_API_KEY: env.PRIVLINT_LLM_API_KEY,
   };
 }
 
@@ -95,7 +95,7 @@ async function main(argv: string[]): Promise<number> {
   // Route the pipeline's non-fatal warnings (see {@link Warn}) to stderr, so
   // stdout stays a clean report or JSON payload a pipe or CI step can consume
   // unpolluted.
-  const warn = (message: string) => process.stderr.write(`datashadow: ${message}\n`);
+  const warn = (message: string) => process.stderr.write(`privlint: ${message}\n`);
 
   // --print-summary surfaces the Parse-stage output so a user can verify exactly
   // what was detected before trusting any finding.
@@ -171,6 +171,6 @@ main(process.argv)
     process.exitCode = code;
   })
   .catch((error: unknown) => {
-    process.stderr.write(`datashadow: ${messageOf(error)}\n`);
+    process.stderr.write(`privlint: ${messageOf(error)}\n`);
     process.exitCode = 1;
   });

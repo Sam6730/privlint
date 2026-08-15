@@ -18,7 +18,7 @@ export const notConfiguredLlmClient: LlmClient = {
   async complete(): Promise<string> {
     throw new Error(
       "No model provider is configured. Set a base URL and model (flags or " +
-        "DATASHADOW_LLM_* env) to enable the judgment checks.",
+        "PRIVLINT_LLM_* env) to enable the judgment checks.",
     );
   },
 };
@@ -84,9 +84,9 @@ export function createOpenAiClient(
 
 /** The environment variables that configure the model provider. */
 export interface LlmEnv {
-  DATASHADOW_LLM_BASE_URL?: string;
-  DATASHADOW_LLM_MODEL?: string;
-  DATASHADOW_LLM_API_KEY?: string;
+  PRIVLINT_LLM_BASE_URL?: string;
+  PRIVLINT_LLM_MODEL?: string;
+  PRIVLINT_LLM_API_KEY?: string;
 }
 
 /**
@@ -98,12 +98,12 @@ export function resolveLlmClient(
   env: LlmEnv,
   fetchImpl: typeof fetch = fetch,
 ): LlmClient {
-  const baseUrl = env.DATASHADOW_LLM_BASE_URL?.trim();
-  const model = env.DATASHADOW_LLM_MODEL?.trim();
+  const baseUrl = env.PRIVLINT_LLM_BASE_URL?.trim();
+  const model = env.PRIVLINT_LLM_MODEL?.trim();
   if (!baseUrl || !model) return notConfiguredLlmClient;
 
   return createOpenAiClient(
-    { baseUrl, model, apiKey: env.DATASHADOW_LLM_API_KEY?.trim() || undefined },
+    { baseUrl, model, apiKey: env.PRIVLINT_LLM_API_KEY?.trim() || undefined },
     fetchImpl,
   );
 }
