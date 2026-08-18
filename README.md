@@ -12,7 +12,7 @@ npx privlint
 
 ---
 
-![60-second demo](assets/demo.gif)
+<!-- Demo recording in progress — re-embed as ![60-second demo](assets/demo.gif) once the new screen recording is encoded. -->
 
 Three beats — run it, inspect what it saw, watch it go quiet on a clean repo. The written walkthrough below mirrors the recording.
 
