@@ -12,7 +12,7 @@ npx privlint
 
 ---
 
-![60-second demo](docs/demo.gif)
+![60-second demo](assets/demo.gif)
 
 Three beats — run it, inspect what it saw, watch it go quiet on a clean repo. The written walkthrough below mirrors the recording.
 
