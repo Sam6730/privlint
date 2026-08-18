@@ -1,9 +1,9 @@
 
 # privlint
 
-**Point it at your JS/TS repo. It tells you — in plain English — where your code is quietly breaking privacy rules, why it matters, and the one-line fix.**
+**Point it at your JS/TS repo. It tells you, in plain English, where your code is quietly breaking privacy rules, why it matters and the one-line fix.**
 
-Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA," and half of them don't even speak Next.js. `privlint` is built for the founder who collects emails, runs payments through Stripe, pipes events into analytics, and has no idea which laws apply or where the code already trips them. One command, no config, no code changes, nothing leaves your machine.
+Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA". `privlint` is built for the founders who want one command with no config, no code changes and nothing leaving your machine.
 
 ```bash
 npx privlint
@@ -19,7 +19,7 @@ https://github.com/user-attachments/assets/683dce46-9bda-49fe-a234-afbc8de35d7d
 
 ## Install & usage
 
-No install needed — `npx` runs the latest published version:
+No install needed: `npx` runs the latest published version:
 
 ```bash
 npx privlint [path]      # defaults to the current directory
@@ -39,7 +39,7 @@ privlint ./my-app
 | `privlint --json` | Emit the report as machine-readable JSON (for CI) |
 | `privlint --help` | Full flag reference, including the interview and model-provider options |
 
-**Three business facts the code can't reveal** are asked once per run (on a terminal), or supplied non-interactively for CI:
+**Three business facts the code can't reveal** are asked once per run (on a terminal) or supplied non-interactively for CI:
 
 ```bash
 privlint --eu-uk-users yes --signed-dpas no --sells-shares-data no --no-interview
@@ -51,7 +51,7 @@ They condition which findings apply — e.g. CCPA "sell/share" duties only surfa
 
 ## What it checks
 
-Ranked by consequence, never by category. Category is a per-finding label.
+Ranked by consequence.
 
 | Check | Category | How it's determined |
 | --- | --- | --- |
@@ -67,7 +67,7 @@ Ranked by consequence, never by category. Category is a per-finding label.
 | CCPA sell/share applicability | `disclosure` | you told us |
 | A vendor-DPA gap | `disclosure` | you told us |
 
-The two `reasoned about` checks run only when you configure a model provider; everything else works with zero AI. Detection prefers a **curated SDK registry** (Stripe, Segment, Mixpanel, PostHog, OpenAI, …) over generic guessing — narrow-and-reliable over broad-and-wrong, because a false positive is the one failure mode a non-expert can't catch.
+The two `reasoned about` checks run only when you configure a model provider and everything else works with zero AI. Detection prefers a **curated SDK registry** (Stripe, Segment, Mixpanel, PostHog, OpenAI, …) over generic guessing.
 
 ## Bring your own model
 
@@ -80,19 +80,19 @@ export PRIVLINT_LLM_MODEL=llama3
 # shell history and the process table (`ps`). Omit it for a local model.
 ```
 
-If the provider errors out (bad key, dead endpoint, timeout), the run **degrades gracefully**: the judgment check is skipped with a note on stderr and your deterministic findings are unaffected — judgment is best-effort, never the credibility floor.
+If the provider errors out (bad key, dead endpoint, timeout), the run **degrades gracefully**: the judgment check is skipped with a note on stderr and your deterministic findings are unaffected.
 
 ## Privacy & limits
 
-- **Your source code never leaves your machine.** Only the small, inspectable `summary.json` is sent to the model provider *you* choose, with *your* key. Nothing is stored on the author's side — the tool is stateless.
-- It's honest about what it **can't** see: your vendor contracts, data residency, and whether a deletion path actually purges every store (it detects the *presence* of a path, not its completeness).
-- It never auto-declares a legal verdict ("you are subject to GDPR", "you are selling data"), and it never writes a privacy policy for you to publish.
+- **Your source code never leaves your machine.** Only the small, inspectable `summary.json` is sent to the model provider *you* choose, with *your* key. Nothing is stored on the author's side so the tool is stateless.
+- It's honest about what it **can't** see: your vendor contracts, data residency and whether a deletion path actually purges every store (it detects the *presence* of a path, not its completeness).
+- It never auto-declares a legal verdict ("you are subject to GDPR", "you are selling data") and it never writes a privacy policy for you to publish.
 
 > **This is a privacy-hygiene check, not legal advice.** It flags likely problems to get reviewed; it can't see your vendor contracts or data residency, and a clean result doesn't prove compliance. When in doubt, check with counsel.
 
 ## Scope
 
-GDPR / UK GDPR (incl. PECR) / CCPA-CPRA data-privacy hygiene, for JavaScript / TypeScript (Next.js, Node, Express). Out of scope: SOC 2, ISO 27001, general security posture, and other stacks (the `summary.json` schema is the language-agnostic seam for future extractors).
+GDPR / UK GDPR (incl. PECR) / CCPA-CPRA data-privacy hygiene for JavaScript / TypeScript (Next.js, Node, Express). Future updates will include support for additional languages.
 
 ## License
 
