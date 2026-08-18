@@ -12,38 +12,55 @@ npx privlint
 
 ---
 
-## 60-second demo
+![60-second demo](docs/demo.gif)
 
-The scripted walkthrough below is the demo — four steps, real output, ending on silence. A screen recording of exactly this run will be linked here.
+Three beats — run it, inspect what it saw, watch it go quiet on a clean repo. The written walkthrough below mirrors the recording.
 
-<!-- Author: record this walkthrough and embed it above as ![60-second demo](docs/demo.gif).
-     Step-by-step recording instructions: docs/demo-recording.md -->
-
-
-**1. Run it on a leaky repo.** No flags, no setup.
+**1. Run it.** No flags, no setup. It asks three questions the code can't answer, then prints a tight, ranked report:
 
 ```console
 $ npx privlint ./my-app
 
-8 findings, most serious first:
+Do you have users in the EU or UK? [yes/no/unknown]                        yes
+Have you signed data-processing agreements (DPAs) with your vendors? [...]  no
+Do you run ads, or sell or share personal data? [yes/no/unknown]           no
 
-[CRITICAL] Committed AWS access key ID in app/api/charge/route.ts:9 (AKIA…)  (secrets · checked in code)
+5 findings, most serious first:
+
+[CRITICAL] Committed AWS access key ID in app/api/charge/route.ts:4 (AKIA…)  (secrets · checked in code)
   Why it matters: Anyone who can read this repo can use this AWS key to spin up
   resources on your account and run up the bill, or reach whatever data that
   account can touch.
   Fix: Remove it from the code and read it from an environment variable instead,
   then rotate the key in the AWS IAM console (treat the committed one as already
-  compromised). Then purge it from your git history…
+  compromised). Then purge it from your git history so it can't be recovered.
 
-[HIGH]     Card data (cardNumber) written to logs in app/api/charge/route.ts:19  (logging · checked in code)
-  Why it matters: Card data (`cardNumber`) is written to your logs… Storing card
-  data in logs also breaks your PCI obligations.
+[HIGH]     Card data (cardNumber) written to logs in app/api/charge/route.ts:12  (logging · checked in code)
+  Why it matters: Card data (`cardNumber`) is written to your logs, which get
+  shipped to third-party log services and retained for months. Storing card data
+  in logs also breaks your PCI obligations.
   Fix: Remove `cardNumber` from the log call — log a non-identifying reference
   (an id, not the value) instead — and scrub it from any logs already retained.
-…
+
+[HIGH]     You told us there are no signed DPAs, but the code sends data to third-party vendors  (dpa · you told us)
+  Why it matters: You said you haven't signed DPAs with your vendors, and the code
+  sends data to Stripe. Without one, that data sharing may lack a lawful basis
+  (GDPR Art. 28 / CCPA service-provider terms).
+  Fix: Put a signed DPA in place with each vendor that processes personal data on
+  your behalf — most major vendors offer a standard one.
+
+[HIGH]     Stripe isn't named as a processor in your privacy policy  (disclosure · reasoned about)
+  Why it matters: Your code sends payment data to Stripe, but your policy doesn't
+  name it. For EU/UK users, an undisclosed processor is a GDPR transparency gap.
+  Fix: List Stripe as a processor in your privacy policy.
+
+[MEDIUM]   Personal data (email) put in a URL in app/api/charge/route.ts:15  (urls · checked in code)
+  Why it matters: URLs leak — they land in server access logs, browser history,
+  and the Referer header sent to third parties.
+  Fix: Move `email` out of the URL and into the request body (or drop it).
 ```
 
-Every finding says **how it was determined** (`checked in code` / `reasoned about` / `you told us`), so you know how much to trust it, and it's ranked by how badly it can burn you — not by category.
+Every finding says **how it was determined** — `checked in code` / `you told us` / `reasoned about` — so you know how much to trust it, and it's ranked by how badly it can burn you, not by category.
 
 **2. Don't trust it? Inspect what it saw.** The tool reasons over a small, structured `summary.json` it builds from your code — not a black box:
 
@@ -52,31 +69,20 @@ $ npx privlint ./my-app --print-summary
 
 {
   "sdks": [
-    { "package": "stripe",  "destination": "Stripe",  "dataCategory": "payment",   "called": true },
-    { "package": "@segment/analytics-node", "destination": "Segment", "dataCategory": "analytics", "called": true }
+    { "package": "stripe", "destination": "Stripe", "dataCategory": "payment", "called": true }
   ],
   "policyPages": { "privacy": { "present": true }, "terms": { "present": false } },
-  "piiSignals": [ { "kind": "log", "field": "email", "line": 19 }, … ]
+  "piiSignals": [
+    { "kind": "log", "field": "cardNumber", "line": 12 },
+    { "kind": "url", "field": "email", "line": 15 }
+  ],
+  "secrets": [ { "kind": "aws-access-key-id", "line": 4, "preview": "AKIA…" } ]
 }
 ```
 
-**3. Add a model provider for the judgment checks.** Bring your own key (or a local model). The model only ever sees that `summary.json` — **never your source code** — and reasons about things a regex can't, like whether the vendors your code calls are actually named in your privacy policy:
+The two `reasoned about` findings above (the DPA gap is `you told us`; the Stripe-vs-policy drift is `reasoned about`) appear only when you configure a model provider — and the model only ever sees this `summary.json`, **never your source code**. Everything else works with zero AI.
 
-```console
-$ PRIVLINT_LLM_BASE_URL=https://api.openai.com/v1 \
-  PRIVLINT_LLM_MODEL=gpt-4o-mini \
-  PRIVLINT_LLM_API_KEY=sk-… \
-  npx privlint ./my-app
-
-[HIGH]     Stripe and Segment aren't named in your privacy policy  (disclosure · reasoned about)
-  Why it matters: Your code sends card and event data to Stripe and Segment, but
-  your policy names neither. If you have EU/UK users, undisclosed processors are a
-  GDPR transparency gap — worth confirming with counsel.
-  Fix: List Stripe and Segment as processors in your privacy policy and confirm a
-  DPA is in place with each.
-```
-
-**4. Run it on a clean repo — and it goes quiet.** The single most important behaviour: no crying wolf.
+**3. Run it on a clean repo — and it goes quiet.** The single most important behaviour: no crying wolf.
 
 ```console
 $ npx privlint ./clean-app
