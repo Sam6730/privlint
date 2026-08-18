@@ -1,3 +1,4 @@
+
 # privlint
 
 **Point it at your JS/TS repo. It tells you — in plain English — where your code is quietly breaking privacy rules, why it matters, and the one-line fix.**
@@ -12,6 +13,7 @@ npx privlint
 
 ---
 
+https://github.com/user-attachments/assets/683dce46-9bda-49fe-a234-afbc8de35d7d
 <!-- Demo recording in progress — re-embed as ![60-second demo](assets/demo.gif) once the new screen recording is encoded. -->
 
 Three beats — run it, inspect what it saw, watch it go quiet on a clean repo. The written walkthrough below mirrors the recording.
