@@ -1,15 +1,21 @@
 
-# privlint
+<div align="center">
 
-**Point it at your JS/TS repo. It tells you, in plain English, where your code is quietly breaking privacy rules, why it matters and the one-line fix.**
+# 🛡️ privlint
 
-Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA". `privlint` is built for the founders who want one command with no config, no code changes and nothing leaving your machine.
+### A privacy-hygiene linter for your JS/TS codebase
+
+*Point it at your repo — it tells you, in plain English, where your code is quietly breaking privacy rules, why it matters, and the one-line fix.*
+
+Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA". `privlint` is built for the founders who want one command — no config, no code changes, nothing leaving your machine.
 
 ```bash
 npx privlint
 ```
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE) ![Node ≥ 18](https://img.shields.io/badge/Node-%E2%89%A5%2018-5FA04E?logo=nodedotjs&logoColor=white) ![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?logo=typescript&logoColor=white) ![Next.js](https://img.shields.io/badge/Next.js-000000?logo=nextdotjs&logoColor=white) ![Express](https://img.shields.io/badge/Express-000000?logo=express&logoColor=white)
+
+</div>
 
 ---
 
