@@ -1,6 +1,6 @@
 {
   "name": "privlint",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "A CLI that scans a JS/TS codebase for data-privacy blind spots and reports them in plain language.",
   "type": "module",
   "license": "MIT",
