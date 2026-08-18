@@ -36,3 +36,6 @@ demo/
 
 # Raw asciinema capture, kept locally for re-encodes
 demo.cast
+
+# Raw screen-recording sources, kept local
+*.mov
