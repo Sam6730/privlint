@@ -1,7 +1,7 @@
 
 <div align="center">
 
-# 🛡️ privlint
+# 🔍 privlint
 
 ### A privacy-hygiene linter for your JS/TS codebase
 
