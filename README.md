@@ -15,6 +15,41 @@ npx privlint
 
 https://github.com/user-attachments/assets/683dce46-9bda-49fe-a234-afbc8de35d7d
 
+<details>
+<summary><b>Prefer text?</b> The same run, written out (the video above plays on GitHub).</summary>
+
+**1. Run it.** No flags. It asks three questions the code can't answer, then prints a tight, ranked report:
+
+```console
+$ npx privlint ./my-app
+
+Do you have users in the EU or UK? [yes/no/unknown]   yes
+Have you signed DPAs with your vendors? [yes/no/...]   no
+Do you run ads, or sell or share personal data? [...]  no
+
+5 findings, most serious first:
+
+[CRITICAL] Committed AWS access key ID in app/api/charge/route.ts:4   (secrets · checked in code)
+[HIGH]     Card data (cardNumber) written to logs …                   (logging · checked in code)
+[HIGH]     No signed DPAs, but the code sends data to Stripe          (dpa · you told us)
+[HIGH]     Stripe isn't named as a processor in your privacy policy   (disclosure · reasoned about)
+[MEDIUM]   Personal data (email) put in a URL …                       (urls · checked in code)
+```
+
+Every finding says **how it was determined** — `checked in code` / `you told us` / `reasoned about` — so you know how much to trust it, and it's ranked by how badly it can burn you, not by category. Each also prints a plain-English *why it matters* and a one-line *fix* (trimmed here).
+
+**2. Don't trust it? Inspect what it saw** with `--print-summary` — the small, structured `summary.json` it reasons over (never your source code). The two `reasoned about` / `you told us` findings appear only when you configure a model provider; everything else works with zero AI.
+
+**3. Run it on a clean repo — and it goes quiet.** No crying wolf:
+
+```console
+$ npx privlint ./clean-app
+
+No findings. Nothing flagged in this run.
+```
+
+</details>
+
 ---
 
 ## Install & usage
