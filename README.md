@@ -5,9 +5,9 @@
 
 ### A privacy-hygiene linter for your JS/TS codebase
 
-*Point it at your repo — it tells you, in plain English, where your code is quietly breaking privacy rules, why it matters, and the one-line fix.*
+*Point it at your repo and it tells you, in plain English, where your code is quietly breaking privacy rules, why it matters and the one-line fix.*
 
-Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA". `privlint` is built for the founders who want one command — no config, no code changes, nothing leaving your machine.
+Privacy scanners are built for security engineers: walls of findings tagged with OWASP IDs and terms like "ROPA" and "DPIA". `privlint` is built for the founders who want one command. No config, no code changes, nothing leaving your machine.
 
 ```bash
 npx privlint
